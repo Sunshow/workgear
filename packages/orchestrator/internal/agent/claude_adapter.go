@@ -39,11 +39,21 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 
 	// 2. Prepare environment variables
 	env := map[string]string{
-		"ANTHROPIC_API_KEY": os.Getenv("ANTHROPIC_API_KEY"),
-		"AGENT_PROMPT":      prompt,
-		"AGENT_MODE":        req.Mode,
-		"TASK_ID":           req.TaskID,
-		"NODE_ID":           req.NodeID,
+		"AGENT_PROMPT": prompt,
+		"AGENT_MODE":   req.Mode,
+		"TASK_ID":      req.TaskID,
+		"NODE_ID":      req.NodeID,
+	}
+
+	// Anthropic credentials (pass non-empty values only)
+	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
+		env["ANTHROPIC_API_KEY"] = v
+	}
+	if v := os.Getenv("ANTHROPIC_BASE_URL"); v != "" {
+		env["ANTHROPIC_BASE_URL"] = v
+	}
+	if v := os.Getenv("ANTHROPIC_AUTH_TOKEN"); v != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = v
 	}
 
 	// Git configuration

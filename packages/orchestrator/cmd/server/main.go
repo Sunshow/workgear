@@ -68,9 +68,9 @@ func main() {
 		)
 		registry.Register(claudeAdapter)
 
-		// Map roles: use claude-code if ANTHROPIC_API_KEY is set, otherwise mock
+		// Map roles: use claude-code if ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is set, otherwise mock
 		adapterName := "mock"
-		if os.Getenv("ANTHROPIC_API_KEY") != "" {
+		if os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" {
 			adapterName = "claude-code"
 			sugar.Info("ClaudeCode adapter enabled (Docker + ANTHROPIC_API_KEY)")
 		} else {

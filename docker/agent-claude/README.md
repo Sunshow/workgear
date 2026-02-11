@@ -15,7 +15,9 @@ The container expects the following environment variables:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| `ANTHROPIC_API_KEY` | Yes* | Your Anthropic API key |
+| `ANTHROPIC_BASE_URL` | No | Custom API base URL (for proxies) |
+| `ANTHROPIC_AUTH_TOKEN` | No* | Auth token (alternative to API key) |
 | `AGENT_PROMPT` | Yes | The prompt to send to Claude |
 | `AGENT_MODE` | Yes | Execution mode: `spec`, `execute`, or `review` |
 | `GIT_REPO_URL` | No | Git repository URL to clone |
@@ -23,6 +25,8 @@ The container expects the following environment variables:
 | `CLAUDE_MODEL` | No | Claude model to use (default: `claude-sonnet-3.5`) |
 | `TASK_ID` | No | Task ID for logging |
 | `NODE_ID` | No | Node ID for logging |
+
+\* Either `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` must be set.
 
 ## Usage
 
