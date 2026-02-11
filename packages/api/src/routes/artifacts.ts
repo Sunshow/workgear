@@ -1,0 +1,61 @@
+import type { FastifyInstance } from 'fastify'
+import { eq, desc } from 'drizzle-orm'
+import { db } from '../db/index.js'
+import { artifacts, artifactVersions, artifactLinks } from '../db/schema.js'
+
+export async function artifactRoutes(app: FastifyInstance) {
+  // 查询 Task 关联的产物
+  app.get<{ Querystring: { taskId: string } }>('/', async (request, reply) => {
+    const { taskId } = request.query
+
+    if (!taskId) {
+      return reply.status(422).send({ error: 'taskId is required' })
+    }
+
+    const result = await db
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.taskId, taskId))
+      .orderBy(desc(artifacts.createdAt))
+
+    return result
+  })
+
+  // 获取单个产物
+  app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
+    const { id } = request.params
+
+    const [artifact] = await db.select().from(artifacts).where(eq(artifacts.id, id))
+
+    if (!artifact) {
+      return reply.status(404).send({ error: 'Artifact not found' })
+    }
+
+    return artifact
+  })
+
+  // 获取产物版本历史
+  app.get<{ Params: { id: string } }>('/:id/versions', async (request) => {
+    const { id } = request.params
+
+    const result = await db
+      .select()
+      .from(artifactVersions)
+      .where(eq(artifactVersions.artifactId, id))
+      .orderBy(desc(artifactVersions.version))
+
+    return result
+  })
+
+  // 获取产物引用关系
+  app.get<{ Params: { id: string } }>('/:id/links', async (request) => {
+    const { id } = request.params
+
+    const result = await db
+      .select()
+      .from(artifactLinks)
+      .where(eq(artifactLinks.sourceId, id))
+
+    return result
+  })
+}

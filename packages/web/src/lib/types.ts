@@ -125,3 +125,48 @@ export interface ValidateDslResponse {
   errors: string[]
   parsed?: any
 }
+
+// FlowRun types
+export interface FlowRun {
+  id: string
+  taskId: string
+  workflowId: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  error: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string
+}
+
+export interface NodeRun {
+  id: string
+  flowRunId: string
+  nodeId: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'rejected' | 'waiting_human'
+  attempt: number
+  input: Record<string, any> | null
+  output: Record<string, any> | null
+  error: string | null
+  startedAt: string | null
+  completedAt: string | null
+  createdAt: string
+}
+
+// Artifact types
+export interface Artifact {
+  id: string
+  taskId: string
+  type: string
+  title: string
+  createdAt: string
+}
+
+export interface ArtifactVersion {
+  id: string
+  artifactId: string
+  version: number
+  content: string
+  changeSummary: string | null
+  createdBy: string | null
+  createdAt: string
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, Play } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Task } from '@/lib/types'
 import { useBoardStore } from '@/stores/board-store'
@@ -18,6 +18,7 @@ import { TimelineTab } from './timeline-tab'
 import { FlowTab } from './flow-tab'
 import { ArtifactsTab } from './artifacts-tab'
 import { GitTab } from './git-tab'
+import { StartFlowDialog } from './start-flow-dialog'
 
 interface TaskDetailProps {
   task: Task | null
@@ -31,6 +32,8 @@ export function TaskDetail({ task, open, onOpenChange, onDeleted }: TaskDetailPr
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [startFlowOpen, setStartFlowOpen] = useState(false)
+  const [flowRefreshKey, setFlowRefreshKey] = useState(0)
 
   function startEditing() {
     if (!task) return
@@ -96,6 +99,10 @@ export function TaskDetail({ task, open, onOpenChange, onDeleted }: TaskDetailPr
               <div className="flex items-start justify-between">
                 <SheetTitle className="text-xl">{task.title}</SheetTitle>
                 <div className="flex gap-1">
+                  <Button variant="outline" size="sm" onClick={() => setStartFlowOpen(true)}>
+                    <Play className="mr-1 h-4 w-4" />
+                    启动流程
+                  </Button>
                   <Button variant="ghost" size="icon" onClick={startEditing}>
                     <Pencil className="h-4 w-4" />
                   </Button>
@@ -121,16 +128,24 @@ export function TaskDetail({ task, open, onOpenChange, onDeleted }: TaskDetailPr
               <TimelineTab taskId={task.id} />
             </TabsContent>
             <TabsContent value="flow">
-              <FlowTab />
+              <FlowTab taskId={task.id} refreshKey={flowRefreshKey} />
             </TabsContent>
             <TabsContent value="artifacts">
-              <ArtifactsTab />
+              <ArtifactsTab taskId={task.id} />
             </TabsContent>
             <TabsContent value="git">
-              <GitTab />
+              <GitTab gitBranch={task.gitBranch} />
             </TabsContent>
           </Tabs>
         </div>
+
+        <StartFlowDialog
+          taskId={task.id}
+          projectId={task.projectId}
+          open={startFlowOpen}
+          onOpenChange={setStartFlowOpen}
+          onSuccess={() => setFlowRefreshKey((k) => k + 1)}
+        />
       </SheetContent>
     </Sheet>
   )

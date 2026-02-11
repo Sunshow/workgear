@@ -7,6 +7,8 @@ import { taskRoutes } from './routes/tasks.js'
 import { healthRoutes } from './routes/health.js'
 import { workflowTemplateRoutes } from './routes/workflow-templates.js'
 import { workflowRoutes } from './routes/workflows.js'
+import { flowRunRoutes } from './routes/flow-runs.js'
+import { artifactRoutes } from './routes/artifacts.js'
 
 const PORT = parseInt(process.env.PORT || '4000', 10)
 const HOST = process.env.HOST || '0.0.0.0'
@@ -31,6 +33,8 @@ await app.register(boardRoutes, { prefix: '/api/boards' })
 await app.register(taskRoutes, { prefix: '/api/tasks' })
 await app.register(workflowTemplateRoutes, { prefix: '/api/workflow-templates' })
 await app.register(workflowRoutes, { prefix: '/api/workflows' })
+await app.register(flowRunRoutes, { prefix: '/api/flow-runs' })
+await app.register(artifactRoutes, { prefix: '/api/artifacts' })
 
 // Start
 try {
