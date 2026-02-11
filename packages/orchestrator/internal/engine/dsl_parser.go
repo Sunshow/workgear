@@ -58,15 +58,46 @@ type FormFieldDef struct {
 
 // OnRejectDef defines reject behavior
 type OnRejectDef struct {
-	Goto     string `yaml:"goto"`
-	MaxLoops int    `yaml:"max_loops"`
-	Inject   map[string]string `yaml:"inject"`
+	Goto     string                 `yaml:"goto"`
+	MaxLoops interface{}            `yaml:"max_loops"` // can be int or string template
+	Inject   map[string]string      `yaml:"inject"`
+}
+
+// GetMaxLoops returns max_loops as int, defaulting to 3 if not parseable
+func (o *OnRejectDef) GetMaxLoops() int {
+	if o.MaxLoops == nil {
+		return 3
+	}
+	switch v := o.MaxLoops.(type) {
+	case int:
+		return v
+	case float64: // YAML numbers are float64
+		return int(v)
+	default:
+		// Template variable or unparseable, use default
+		return 3
+	}
 }
 
 // RetryDef defines retry behavior
 type RetryDef struct {
-	MaxAttempts int    `yaml:"max_attempts"`
-	Backoff     string `yaml:"backoff"`
+	MaxAttempts interface{} `yaml:"max_attempts"` // can be int or string template
+	Backoff     string      `yaml:"backoff"`
+}
+
+// GetMaxAttempts returns max_attempts as int, defaulting to 3 if not parseable
+func (r *RetryDef) GetMaxAttempts() int {
+	if r.MaxAttempts == nil {
+		return 3
+	}
+	switch v := r.MaxAttempts.(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	default:
+		return 3
+	}
 }
 
 // EdgeDef represents a connection between nodes

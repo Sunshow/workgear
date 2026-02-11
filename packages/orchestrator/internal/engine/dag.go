@@ -354,11 +354,12 @@ func (e *FlowExecutor) HandleReject(ctx context.Context, nodeRunID, feedback str
 	}
 
 	// Check max_loops
-	if nodeDef.OnReject != nil && nodeDef.OnReject.MaxLoops > 0 {
+	maxLoops := nodeDef.OnReject.GetMaxLoops()
+	if maxLoops > 0 {
 		targetNodeRun, _ := e.db.GetNodeRunByFlowAndNode(ctx, nodeRun.FlowRunID, targetNodeID)
-		if targetNodeRun != nil && targetNodeRun.Attempt >= nodeDef.OnReject.MaxLoops {
+		if targetNodeRun != nil && targetNodeRun.Attempt >= maxLoops {
 			// Max loops reached — fail the flow
-			errMsg := fmt.Sprintf("打回次数已达上限 (%d)，节点: %s", nodeDef.OnReject.MaxLoops, nodeRun.NodeID)
+			errMsg := fmt.Sprintf("打回次数已达上限 (%d)，节点: %s", maxLoops, nodeRun.NodeID)
 			if err := e.db.UpdateFlowRunError(ctx, nodeRun.FlowRunID, db.StatusFailed, errMsg); err != nil {
 				return err
 			}
