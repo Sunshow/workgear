@@ -73,6 +73,7 @@ chmod +x scripts/setup.sh
 2. ✅ 启动 Docker 数据库（PostgreSQL + Redis）
 3. ✅ 安装所有 npm 依赖
 4. ✅ 推送数据库 Schema
+5. ✅ 导入内置流程模板种子数据
 
 ### 方式二：手动步骤
 
@@ -91,6 +92,9 @@ cp packages/api/.env.example packages/api/.env
 # 4. 推送数据库 Schema
 cd packages/api
 pnpm db:push
+
+# 5. 导入内置流程模板
+pnpm db:seed
 cd ../..
 
 # 5. 验证安装
@@ -279,12 +283,14 @@ docker-compose down -v
 docker-compose up -d
 cd ../packages/api
 pnpm db:push
+pnpm db:seed
 
 # 方式二：清空所有表
 psql postgresql://workgear:workgear_dev_pass@localhost:5432/workgear_dev \
   -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 cd packages/api
 pnpm db:push
+pnpm db:seed
 ```
 
 ---
@@ -371,6 +377,9 @@ pnpm db:generate
 
 # 推送 Schema 到数据库（开发）
 pnpm db:push
+
+# 导入内置流程模板种子数据
+pnpm db:seed
 
 # 启动 Drizzle Studio
 pnpm db:studio
