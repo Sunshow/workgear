@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://workgear.dev/schemas/prd.v1.json",
+  "title": "Product Requirements Document (PRD)",
+  "description": "结构化的产品需求文档",
+  "type": "object",
+  "required": ["title", "background", "goals", "scope", "acceptance_criteria"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "PRD 标题",
+      "minLength": 5,
+      "maxLength": 200
+    },
+    "background": {
+      "type": "string",
+      "description": "背景和动机：为什么要做这个需求",
+      "minLength": 20
+    },
+    "goals": {
+      "type": "array",
+      "description": "目标列表",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["description", "priority"],
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 10
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["P0", "P1", "P2"]
+          },
+          "measurable": {
+            "type": "string",
+            "description": "可量化的成功指标"
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "required": ["in_scope", "out_of_scope"],
+      "properties": {
+        "in_scope": {
+          "type": "array",
+          "description": "范围内的功能",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "out_of_scope": {
+          "type": "array",
+          "description": "明确不做的功能",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "user_stories": {
+      "type": "array",
+      "description": "用户故事列表（可选，也可以在后续拆解）",
+      "items": {
+        "type": "object",
+        "required": ["as_a", "i_want", "so_that"],
+        "properties": {
+          "as_a": {
+            "type": "string",
+            "description": "用户角色"
+          },
+          "i_want": {
+            "type": "string",
+            "description": "期望功能"
+          },
+          "so_that": {
+            "type": "string",
+            "description": "价值/目的"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["P0", "P1", "P2"]
+          }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "description": "验收标准",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["given", "when", "then"],
+        "properties": {
+          "given": {
+            "type": "string",
+            "description": "前置条件"
+          },
+          "when": {
+            "type": "string",
+            "description": "操作"
+          },
+          "then": {
+            "type": "string",
+            "description": "预期结果"
+          }
+        }
+      }
+    },
+    "technical_considerations": {
+      "type": "object",
+      "description": "技术考量（可选）",
+      "properties": {
+        "dependencies": {
+          "type": "array",
+          "description": "依赖的系统/服务",
+          "items": {
+            "type": "string"
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "description": "技术约束",
+          "items": {
+            "type": "string"
+          }
+        },
+        "risks": {
+          "type": "array",
+          "description": "技术风险",
+          "items": {
+            "type": "object",
+            "required": ["description", "severity", "mitigation"],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["high", "medium", "low"]
+              },
+              "mitigation": {
+                "type": "string",
+                "description": "缓解措施"
+              }
+            }
+          }
+        }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "description": "时间规划（可选）",
+      "properties": {
+        "estimated_effort": {
+          "type": "string",
+          "description": "预估工作量（如 2w, 1m）"
+        },
+        "milestones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "deadline"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "deadline": {
+                "type": "string",
+                "format": "date"
+              }
+            }
+          }
+        }
+      }
+    },
+    "stakeholders": {
+      "type": "array",
+      "description": "干系人",
+      "items": {
+        "type": "object",
+        "required": ["name", "role"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "description": "角色（如 Product Owner, Tech Lead）"
+          }
+        }
+      }
+    }
+  }
+}

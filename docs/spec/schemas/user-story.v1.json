@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://workgear.dev/schemas/user-story.v1.json",
+  "title": "User Story",
+  "description": "结构化的用户故事",
+  "type": "object",
+  "required": ["title", "as_a", "i_want", "so_that", "acceptance_criteria"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Story 标题",
+      "minLength": 5,
+      "maxLength": 200
+    },
+    "story_id": {
+      "type": "string",
+      "description": "Story 编号（如 US-001）",
+      "pattern": "^US-\\d{3,}$"
+    },
+    "as_a": {
+      "type": "string",
+      "description": "用户角色",
+      "minLength": 2
+    },
+    "i_want": {
+      "type": "string",
+      "description": "期望功能",
+      "minLength": 10
+    },
+    "so_that": {
+      "type": "string",
+      "description": "价值/目的",
+      "minLength": 10
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["P0", "P1", "P2"],
+      "default": "P1"
+    },
+    "story_points": {
+      "type": "integer",
+      "description": "故事点数",
+      "enum": [1, 2, 3, 5, 8, 13, 21]
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "description": "验收标准（Given-When-Then）",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["given", "when", "then"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "AC 编号（如 AC-1）"
+          },
+          "given": {
+            "type": "string",
+            "description": "前置条件"
+          },
+          "when": {
+            "type": "string",
+            "description": "操作"
+          },
+          "then": {
+            "type": "string",
+            "description": "预期结果"
+          },
+          "testable": {
+            "type": "boolean",
+            "description": "是否可自动化测试",
+            "default": true
+          }
+        }
+      }
+    },
+    "technical_notes": {
+      "type": "string",
+      "description": "技术实现备注"
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "依赖的其他 Story",
+      "items": {
+        "type": "string",
+        "description": "Story ID（如 US-002）"
+      }
+    },
+    "ui_mockup_ref": {
+      "type": "string",
+      "description": "UI 原型链接（可选）",
+      "format": "uri"
+    },
+    "test_scenarios": {
+      "type": "array",
+      "description": "测试场景",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["unit", "integration", "e2e", "manual"]
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

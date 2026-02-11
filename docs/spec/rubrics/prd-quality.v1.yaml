@@ -1,0 +1,64 @@
+# PRD 质量评估标准 (Rubric)
+name: "PRD质量评估标准"
+version: "1.0"
+description: "用于 adjudicate 节点评估 PRD 质量的 Rubric 定义"
+
+dimensions:
+  - name: completeness
+    display_name: "完整性"
+    weight: 0.25
+    description: "PRD 是否包含所有必要章节"
+    criteria:
+      - "包含背景和目标"
+      - "包含功能范围和非目标（out_of_scope）"
+      - "包含验收标准（Given-When-Then）"
+      - "包含风险评估和缓解措施"
+    scoring:
+      0: "缺少 3 项以上"
+      25: "缺少 2-3 项"
+      50: "缺少 1 项"
+      75: "全部包含但部分不够详细"
+      100: "全部包含且详细充分"
+
+  - name: clarity
+    display_name: "清晰度"
+    weight: 0.25
+    description: "需求描述是否清晰无歧义"
+    criteria:
+      - "需求描述无歧义，不同读者理解一致"
+      - "术语定义清晰，无未解释的缩写"
+      - "用例场景具体，包含正常流和异常流"
+    scoring:
+      0: "大量歧义，难以理解"
+      33: "部分描述模糊，需要额外沟通"
+      66: "基本清晰，少量细节需要确认"
+      100: "非常清晰，无需额外沟通"
+
+  - name: feasibility
+    display_name: "可行性"
+    weight: 0.25
+    description: "技术方案是否可行，工作量是否合理"
+    criteria:
+      - "技术方案可行，不依赖不存在的能力"
+      - "工作量评估合理，与复杂度匹配"
+      - "依赖关系明确，外部依赖已确认"
+    scoring:
+      0: "方案不可行或严重低估"
+      33: "方案基本可行但有重大风险"
+      66: "方案可行，风险可控"
+      100: "方案成熟，风险已有缓解措施"
+
+  - name: testability
+    display_name: "可测试性"
+    weight: 0.25
+    description: "验收标准是否可量化、可测试"
+    criteria:
+      - "验收标准可量化（有具体数值或明确的通过/失败判定）"
+      - "测试场景可枚举（覆盖正常流、边界、异常）"
+    scoring:
+      0: "验收标准模糊，无法测试"
+      50: "部分可测试，但缺少边界和异常场景"
+      100: "全部可测试，场景覆盖充分"
+
+pass_threshold: 80
+fail_action: "request_revision"  # request_revision | escalate_to_human | reject
