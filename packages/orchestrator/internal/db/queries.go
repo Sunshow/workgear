@@ -405,6 +405,46 @@ func (c *Client) UpdateNodeRunInput(ctx context.Context, id string, input *strin
 	return err
 }
 
+// GetAllNodeRunOutputs returns a map of nodeID → parsed output for all completed nodes in a flow run.
+// For nodes with multiple attempts, only the latest completed attempt is returned.
+func (c *Client) GetAllNodeRunOutputs(ctx context.Context, flowRunID string) (map[string]map[string]any, error) {
+	rows, err := c.pool.Query(ctx, `
+		SELECT DISTINCT ON (node_id) node_id, output
+		FROM node_runs
+		WHERE flow_run_id = $1 AND status = 'completed' AND output IS NOT NULL
+		ORDER BY node_id, attempt DESC
+	`, flowRunID)
+	if err != nil {
+		return nil, fmt.Errorf("get all node run outputs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]map[string]any)
+	for rows.Next() {
+		var nodeID string
+		var outputStr string
+		if err := rows.Scan(&nodeID, &outputStr); err != nil {
+			return nil, err
+		}
+		var output map[string]any
+		if err := json.Unmarshal([]byte(outputStr), &output); err == nil {
+			result[nodeID] = output
+		}
+	}
+	return result, nil
+}
+
+// GetTaskBasicInfo retrieves task id and title
+func (c *Client) GetTaskBasicInfo(ctx context.Context, taskID string) (id, title string, err error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT id, COALESCE(title, '') FROM tasks WHERE id = $1
+	`, taskID)
+	if err := row.Scan(&id, &title); err != nil {
+		return "", "", fmt.Errorf("get task basic info: %w", err)
+	}
+	return id, title, nil
+}
+
 // CreateTimelineEvent inserts a timeline event
 func (c *Client) CreateTimelineEvent(ctx context.Context, evt *TimelineEvent) error {
 	_, err := c.pool.Exec(ctx, `

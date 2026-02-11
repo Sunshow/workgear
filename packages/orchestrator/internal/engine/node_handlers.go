@@ -23,26 +23,42 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		return err
 	}
 
-	// 2. Resolve agent role
+	// 2. Build runtime template context
+	runtimeCtx := e.buildRuntimeContext(ctx, flowRun, nodeRun)
+
+	// 3. Resolve agent role (may contain template vars, render it)
 	role := "general-developer"
 	if nodeDef.Agent != nil && nodeDef.Agent.Role != "" {
 		role = nodeDef.Agent.Role
+		// Render role in case it contains template variables
+		if rendered, err := RenderTemplate(role, runtimeCtx); err == nil {
+			role = rendered
+		}
 	}
 
-	// 3. Get adapter from registry
+	// 4. Get adapter from registry
 	adapter, err := e.registry.GetAdapter(role)
 	if err != nil {
 		return fmt.Errorf("get agent adapter: %w", err)
 	}
 
-	// 4. Build agent request
+	// 5. Build agent request
 	mode := "execute"
 	prompt := ""
 	if nodeDef.Config != nil {
 		if nodeDef.Config.Mode != "" {
 			mode = nodeDef.Config.Mode
 		}
-		prompt = nodeDef.Config.PromptTemplate
+		// Render prompt_template with runtime context
+		if nodeDef.Config.PromptTemplate != "" {
+			rendered, err := RenderTemplate(nodeDef.Config.PromptTemplate, runtimeCtx)
+			if err != nil {
+				e.logger.Warnw("Failed to render prompt template", "error", err)
+				prompt = nodeDef.Config.PromptTemplate // fallback to original
+			} else {
+				prompt = rendered
+			}
+		}
 	}
 
 	// Parse input context
@@ -235,4 +251,60 @@ func (e *FlowExecutor) getDAG(ctx context.Context, flowRunID string) (*DAG, erro
 		return nil, err
 	}
 	return dag, nil
+}
+
+// buildRuntimeContext constructs the pongo2 template context for runtime rendering.
+// Includes: params, nodes (upstream outputs), review (feedback), task (id/title).
+func (e *FlowExecutor) buildRuntimeContext(ctx context.Context, flowRun *db.FlowRun, nodeRun *db.NodeRun) map[string]any {
+	runtimeCtx := make(map[string]any)
+
+	// 1. params — restore from flow run variables
+	if flowRun.Variables != nil {
+		var vars map[string]string
+		if err := json.Unmarshal([]byte(*flowRun.Variables), &vars); err == nil {
+			runtimeCtx["params"] = vars
+		}
+	}
+	if runtimeCtx["params"] == nil {
+		runtimeCtx["params"] = map[string]string{}
+	}
+
+	// 2. nodes — collect all completed node outputs as {nodeID: {outputs: {...}}}
+	nodeOutputs, err := e.db.GetAllNodeRunOutputs(ctx, flowRun.ID)
+	if err != nil {
+		e.logger.Warnw("Failed to get node outputs for template", "error", err)
+		nodeOutputs = make(map[string]map[string]any)
+	}
+	// Wrap each node's output under "outputs" key to match {{nodes.xxx.outputs.yyy}} syntax
+	nodesCtx := make(map[string]any)
+	for nodeID, output := range nodeOutputs {
+		nodesCtx[nodeID] = map[string]any{
+			"outputs": output,
+		}
+	}
+	runtimeCtx["nodes"] = nodesCtx
+
+	// 3. review — extract feedback from node input context
+	review := map[string]any{}
+	if nodeRun.Input != nil {
+		var input map[string]any
+		if err := json.Unmarshal([]byte(*nodeRun.Input), &input); err == nil {
+			if fb, ok := input["_feedback"]; ok {
+				review["comment"] = fb
+			}
+		}
+	}
+	runtimeCtx["review"] = review
+
+	// 4. task — basic info
+	taskCtx := map[string]any{"id": flowRun.TaskID}
+	if id, title, err := e.db.GetTaskBasicInfo(ctx, flowRun.TaskID); err == nil {
+		taskCtx["id"] = id
+		taskCtx["title"] = title
+		// slug alias for backward compat with templates using task.slug
+		taskCtx["slug"] = title
+	}
+	runtimeCtx["task"] = taskCtx
+
+	return runtimeCtx
 }

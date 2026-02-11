@@ -139,15 +139,18 @@ func (e *FlowExecutor) resolveNodeInput(ctx context.Context, flowRunID string, d
 
 // StartFlow initializes a flow run: parses DSL, creates node runs, activates entry nodes
 func (e *FlowExecutor) StartFlow(ctx context.Context, flowRunID, dsl string, variables map[string]string) error {
-	// 1. Parse DSL
-	wf, dag, err := ParseDSL(dsl)
+	// 1. Render params variables in DSL ({{params.xxx}} → actual values)
+	renderedDSL := RenderParams(dsl, variables)
+
+	// 2. Parse DSL
+	wf, dag, err := ParseDSL(renderedDSL)
 	if err != nil {
 		return fmt.Errorf("parse DSL: %w", err)
 	}
 	_ = wf
 
-	// 2. Save DSL snapshot to flow run
-	if err := e.db.SaveFlowRunDslSnapshot(ctx, flowRunID, dsl, variables); err != nil {
+	// 3. Save rendered DSL snapshot to flow run (preserves runtime template vars)
+	if err := e.db.SaveFlowRunDslSnapshot(ctx, flowRunID, renderedDSL, variables); err != nil {
 		return fmt.Errorf("save DSL snapshot: %w", err)
 	}
 
