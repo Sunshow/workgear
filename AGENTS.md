@@ -25,6 +25,11 @@ WorkGear 是一个 AI Agent 工作流编排平台，支持 ClaudeCode 等 Agent 
 - Drizzle ORM 使用 beta API：`drizzle({ client, schema })`，不要用旧版的双参数形式
 - Fastify 路由使用 plugin 模式注册，通过 `app.register(routes, { prefix })` 挂载
 - Go 代码遵循标准项目布局（`cmd/` + `internal/`）
+- Tailwind CSS 4 不再使用 `tailwind.config.ts`，所有主题配置写在 `src/index.css` 的 `@theme inline` 块中
+- CSS 入口文件使用 `@import "tailwindcss"` 而非旧版的 `@tailwind base/components/utilities`
+- 使用 `@tailwindcss/vite` 插件集成 Vite，不需要 PostCSS 配置
+- 自定义颜色通过 CSS 变量 + `@theme inline` 映射：`--color-primary: hsl(var(--primary))`
+- 前端 UI 组件基于 Shadcn/ui 模式（Radix UI + Tailwind），组件位于 `packages/web/src/components/ui/`
 
 ### 架构约束
 

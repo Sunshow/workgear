@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { tasks } from '../db/schema.js'
+import { tasks, timelineEvents } from '../db/schema.js'
 
 export async function taskRoutes(app: FastifyInstance) {
   // 获取项目的所有任务
@@ -82,5 +82,40 @@ export async function taskRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Task not found' })
     }
     return { success: true }
+  })
+
+  // 移动任务（跨列或列内排序）
+  app.put<{
+    Params: { id: string }
+    Body: { columnId: string; position: number }
+  }>('/:id/move', async (request, reply) => {
+    const { id } = request.params
+    const { columnId, position } = request.body
+
+    // 更新任务的列和位置
+    const [updated] = await db.update(tasks)
+      .set({
+        columnId,
+        position,
+        updatedAt: new Date(),
+      })
+      .where(eq(tasks.id, id))
+      .returning()
+
+    if (!updated) {
+      return reply.status(404).send({ error: 'Task not found' })
+    }
+
+    return updated
+  })
+
+  // 获取任务时间线
+  app.get<{ Params: { id: string } }>('/:id/timeline', async (request) => {
+    const { id } = request.params
+    const events = await db.select()
+      .from(timelineEvents)
+      .where(eq(timelineEvents.taskId, id))
+      .orderBy(timelineEvents.createdAt)
+    return events
   })
 }
