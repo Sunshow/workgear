@@ -1,108 +1,143 @@
 # WorkGear
 
-一个让 AI Agent 和人类协作完成研发任务的平台。
+> AI Agent 工作流编排平台 - Phase 1 基础设施
 
-你可以把它理解为"给 AI Agent 用的看板 + 流程引擎"：定义一个流程（比如"需求分析 → 写 PRD → 拆 Story → 写代码 → Review → 测试"），然后让多个 Agent 按流程协作，人类在关键节点介入审核或打回重来。
+## 技术栈
 
-当前仓库以**技术规格文档**为主，已完成多轮架构评审与增量收口，可作为后续实现阶段的基线。
+### 基础设施
+- **PostgreSQL**: 18.1
+- **Redis**: 8.4.1
+- **Node.js**: 22.22.0 LTS
+- **pnpm**: 10.28.2
+- **Go**: 1.26
 
-## 为什么做这个
+### 前端
+- React 19.2.1 + Vite 7.0 + TypeScript 5.9
+- Tailwind CSS 4.1.18 + Shadcn/ui
+- Zustand 5.0.11 + React Router 7.13.0
+- Zod 4.3.6 + React Hook Form
 
-- 现有 AI Agent 工具大多是"单 Agent 单任务"，缺少多 Agent 协作与流程编排能力
-- 研发流程天然是多阶段、多角色、需要人机协作的，但缺少统一的编排平台
-- 需求、PRD、Story、代码、PR 之间的追溯链路经常断裂，难以回溯
+### 后端
+- Fastify 5.7.4 + Drizzle ORM 1.0-beta.15
+- WebSocket (ws) + gRPC
+- Pino 10.1.0
 
-## 核心能力
+### Orchestrator
+- Go 1.26 + gRPC 1.78.0
+- pgx 5.8.0 + go-redis 9.7.0
+- Zap 1.27.1
 
-### 1. 流程编排
+## 快速开始
 
-- 用 YAML 定义流程（支持并行、条件分支、打回重试、人工审核）
-- 支持多种节点类型：Agent 任务、人工审核、多 Agent 协同、仲裁、聚合等
-- 流程可视化 + 实时状态推送
+### 前置要求
 
-### 2. 多 Agent 协同
+- Node.js >= 22.0.0
+- pnpm >= 10.0.0
+- Docker & Docker Compose
+- Go >= 1.26 (可选，用于 Orchestrator)
 
-- 同一环节可以让多个 Agent 独立产出，然后按质量评分选最优（比如让 3 个 Agent 各写一版 PRD，自动评分选最好的）
-- 支持"主写 + 审稿人"模式（一个 Agent 写，其他 Agent 提改进意见）
-- 支持辩论模式（Agent 之间互评，最后裁决）
+### 安装
 
-### 3. 产物追溯
+```bash
+# 克隆仓库
+git clone <repo-url>
+cd workgear
 
-- 需求、PRD、User Story、代码、PR 都是一等公民，有版本管理和引用关系
-- 可以从一个 Task 回溯到最初的需求文本，或者从 PRD 看到它派生出了哪些 Story
-
-### 4. 看板 + Git 集成
-
-- Task 卡片自动关联流程状态、产物、Git 分支和 PR
-- 流程节点完成后自动推进看板列
-- 支持 GitHub/GitLab Webhook 双向同步
-
-### 5. 本地 + 云端混合
-
-- 桌面端可以用本地 Agent（比如本机的 ClaudeCode）
-- 云端 Web 只能调用远程 Agent（不会直接触达你机器上的进程）
-- 同一个流程可以混用不同类型的 Agent（ClaudeCode、Codex、自定义 HTTP Agent 等）
-
-### 6. 稳定性保障
-
-- 流程执行状态持久化到数据库，服务重启后可以恢复
-- 人工审核节点不会阻塞系统（落库等待，审核完再继续）
-- Git 操作、Webhook 调用等外部副作用有幂等保障，重试不会重复执行
-
-## 仓库结构
-
-```text
-.
-├── docs/
-│   ├── spec/      # 规格与实现设计文档
-│   └── reviews/   # 各轮评审报告
-└── README.md
+# 运行设置脚本（自动安装依赖并启动数据库）
+chmod +x scripts/setup.sh
+./scripts/setup.sh
 ```
 
-## 文档索引
+### 开发
 
-### 规格文档（`docs/spec/`）
+```bash
+# 启动所有服务
+pnpm dev
 
-- `docs/spec/README.md`：总览与索引
-- `docs/spec/02-architecture.md`：系统架构
-- `docs/spec/03-flow-engine.md`：流程 DSL 与引擎语义
-- `docs/spec/04-agent-layer.md`：Agent 接入层与执行器模型
-- `docs/spec/05-board-flow-integration.md`：看板与流程融合
-- `docs/spec/06-data-model.md`：数据库模型
-- `docs/spec/07-roadmap.md`：迭代路线图
-- `docs/spec/08-api-design.md`：REST / WebSocket / gRPC 设计
-- `docs/spec/09-implementation-details.md`：关键实现细节
-- `docs/spec/10-improvements.md`：改进项收口追踪
-- `docs/spec/11-security.md`：安全与运行域隔离
+# 或分别启动
+pnpm --filter @workgear/web dev      # 前端 (http://localhost:3000)
+pnpm --filter @workgear/api dev      # API (http://localhost:4000)
+cd packages/orchestrator && make run # Orchestrator (gRPC :50051)
+```
 
-### 评审报告（`docs/reviews/`）
+### 数据库管理
 
-按时间戳持续记录设计评审与增量复审过程，可用于审计与决策追溯。
+```bash
+# 查看数据库
+cd packages/api
+pnpm db:studio
 
-## 当前状态
+# 生成迁移
+pnpm db:generate
 
-- ✅ 规格方案已完成多轮 review 与关键问题收口
-- ✅ 多 Agent 类型 + 多执行器 + 本地/云端执行域边界已明确
-- ✅ 可进入实现冻结与工程落地阶段
+# 推送 schema
+pnpm db:push
+```
 
-## 下一步建议
+## 项目结构
 
-1. **先跑通最小闭环**：需求输入 → Agent 写 PRD → 人工审核 → Agent 拆 Story → 创建 Task
-2. **参考 `docs/spec/07-roadmap.md`** 按 Phase A-C + Phase 1-4 分阶段推进
-3. **用 `docs/spec/10-improvements.md`** 作为实现跟踪清单（28 个问题已全部收口）
-4. **初始化 Monorepo**：按 `docs/spec/07-roadmap.md` 的目录结构搭建 `packages/web`、`packages/api`、`orchestrator` 等
+```
+workgear/
+├── packages/
+│   ├── web/           # React 前端
+│   ├── api/           # Fastify API Server
+│   ├── orchestrator/  # Go 调度服务
+│   └── shared/        # 共享代码
+├── docker/            # Docker 配置
+├── scripts/           # 工具脚本
+└── docs/              # 文档
+```
 
-## 技术栈（规划）
+## API 端点
 
-- **Web 前端**：React + TypeScript + Vite
-- **API 服务**：Node.js + Fastify + Drizzle ORM
-- **流程引擎**：Go + gRPC
-- **数据库**：PostgreSQL
-- **桌面端**：Electron（共享 Web 组件）
+### Health Check
+- `GET /api/health` - 健康检查
 
-## 说明
+### Projects
+- `GET /api/projects` - 获取所有项目
+- `GET /api/projects/:id` - 获取单个项目
+- `POST /api/projects` - 创建项目
+- `PUT /api/projects/:id` - 更新项目
+- `DELETE /api/projects/:id` - 删除项目
 
-- 本仓库当前**只有规格文档**，没有可运行代码
-- 规格已完成 6 轮评审，28 个问题全部收口，可以开始编码了
-- 如果你想贡献代码或提建议，欢迎提 Issue 或 PR
+### Boards
+- `GET /api/boards?projectId=xxx` - 获取项目看板
+- `GET /api/boards/:id/columns` - 获取看板列
 
+### Tasks
+- `GET /api/tasks?projectId=xxx` - 获取项目任务
+- `GET /api/tasks/:id` - 获取单个任务
+- `POST /api/tasks` - 创建任务
+- `PUT /api/tasks/:id` - 更新任务
+- `DELETE /api/tasks/:id` - 删除任务
+
+## Phase 1 完成状态
+
+- ✅ Monorepo 结构（pnpm workspace）
+- ✅ PostgreSQL 18.1 + Redis 8.4 Docker Compose
+- ✅ 数据库 Schema（17 张核心表）
+- ✅ Fastify 5 API Server 骨架
+- ✅ 基础 CRUD API（projects、boards、tasks）
+- ✅ React 19 + Vite 7 前端骨架
+- ✅ Tailwind CSS 4 配置
+- ✅ Go 1.26 Orchestrator 骨架
+- ✅ gRPC 服务端（Mock 实现）
+
+## 下一步（Phase 2）
+
+- 看板拖拽功能
+- 流程模板库（4 个内置模板）
+- YAML 编辑器 + DAG 预览
+- Task 详情面板
+- WebSocket 实时推送
+
+## 文档
+
+详细文档请查看 `docs/` 目录：
+- [PRD MVP 文档](./docs/PRD/MVP/)
+- [技术规格](./docs/spec/)
+- [Phase 1 实施方案](./docs/spec/12-phase1-implementation.md)
+
+## License
+
+MIT

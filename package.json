@@ -1,0 +1,16 @@
+{
+  "name": "workgear",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Agent 工作流编排平台",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @workgear/web dev & pnpm --filter @workgear/api dev",
+    "build": "pnpm --recursive build",
+    "clean": "pnpm --recursive clean"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.28.2"
+}

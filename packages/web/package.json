@@ -1,0 +1,31 @@
+{
+  "name": "@workgear/web",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "react-router": "^7.13.0",
+    "zustand": "^5.0.11",
+    "zod": "^4.3.6",
+    "react-hook-form": "^7.54.0",
+    "@hookform/resolvers": "^3.9.1",
+    "ky": "^1.14.3",
+    "@xyflow/react": "^12.10.0",
+    "@monaco-editor/react": "^4.7.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "typescript": "^5.9.0",
+    "tailwindcss": "^4.1.18",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0"
+  }
+}

@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package orchestrator;
+
+option go_package = "github.com/sunshow/workgear/orchestrator/internal/grpc/pb";
+
+service OrchestratorService {
+  rpc StartFlow(StartFlowRequest) returns (StartFlowResponse);
+  rpc CancelFlow(CancelFlowRequest) returns (CancelFlowResponse);
+  rpc RejectNode(RejectNodeRequest) returns (RejectNodeResponse);
+  rpc ApproveNode(ApproveNodeRequest) returns (ApproveNodeResponse);
+  rpc EditNode(EditNodeRequest) returns (EditNodeResponse);
+  rpc RetryNode(RetryNodeRequest) returns (RetryNodeResponse);
+}
+
+message StartFlowRequest {
+  string flow_run_id = 1;
+  string workflow_dsl = 2;
+  map<string, string> variables = 3;
+}
+
+message StartFlowResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message CancelFlowRequest {
+  string flow_run_id = 1;
+}
+
+message CancelFlowResponse {
+  bool success = 1;
+}
+
+message RejectNodeRequest {
+  string node_run_id = 1;
+  string feedback = 2;
+}
+
+message RejectNodeResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ApproveNodeRequest {
+  string node_run_id = 1;
+}
+
+message ApproveNodeResponse {
+  bool success = 1;
+}
+
+message EditNodeRequest {
+  string node_run_id = 1;
+  string edited_content = 2;
+  string change_summary = 3;
+}
+
+message EditNodeResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message RetryNodeRequest {
+  string node_run_id = 1;
+}
+
+message RetryNodeResponse {
+  bool success = 1;
+}
