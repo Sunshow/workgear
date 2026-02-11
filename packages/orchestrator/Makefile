@@ -14,9 +14,9 @@ proto:
 build:
 	go build -o bin/orchestrator ./cmd/server
 
-# 运行
+# 运行（从 .env 加载环境变量）
 run:
-	go run ./cmd/server
+	@if [ -f .env ]; then set -a && . ./.env && set +a; fi && go run ./cmd/server
 
 # 清理
 clean:

@@ -115,12 +115,12 @@ cd docker && docker-compose up -d && cd ..
 
 # 2. 启动所有服务（推荐）
 pnpm dev
-# 这会同时启动前端（:3000）和 API（:4000）
+# 这会同时启动前端（:3000）、API（:4000）和 Orchestrator（:50051）
 
 # 或者分别启动各个服务
-pnpm --filter @workgear/web dev      # 前端
-pnpm --filter @workgear/api dev      # API
-cd packages/orchestrator && make run # Orchestrator
+pnpm run dev:web           # 前端
+pnpm run dev:api           # API
+pnpm run dev:orchestrator  # Orchestrator
 ```
 
 ### 服务访问地址
@@ -330,8 +330,13 @@ export GRPC_PORT=50051
 ### 根目录命令
 
 ```bash
-# 同时启动前端和 API（开发模式）
+# 同时启动前端、API 和 Orchestrator（开发模式）
 pnpm dev
+
+# 单独启动某个服务
+pnpm run dev:web           # 前端
+pnpm run dev:api           # API Server
+pnpm run dev:orchestrator  # Go Orchestrator
 
 # 构建所有包
 pnpm build

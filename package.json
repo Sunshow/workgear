@@ -4,7 +4,10 @@
   "private": true,
   "description": "AI Agent 工作流编排平台",
   "scripts": {
-    "dev": "pnpm --parallel --filter @workgear/web dev & pnpm --filter @workgear/api dev",
+    "dev": "pnpm run dev:web & pnpm run dev:api & pnpm run dev:orchestrator",
+    "dev:web": "pnpm --filter @workgear/web dev",
+    "dev:api": "pnpm --filter @workgear/api dev",
+    "dev:orchestrator": "cd packages/orchestrator && make run",
     "build": "pnpm --recursive build",
     "clean": "pnpm --recursive clean"
   },
