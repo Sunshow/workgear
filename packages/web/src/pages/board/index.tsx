@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router'
+import { useParams, useNavigate } from 'react-router'
 import { DndContext, DragEndEvent, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { api } from '@/lib/api'
 import type { Board, BoardColumn, Task, Project } from '@/lib/types'
 import { useBoardStore } from '@/stores/board-store'
+import { Button } from '@/components/ui/button'
 import { BoardColumnComponent } from './board-column'
 import { CreateTaskDialog } from './create-task-dialog'
 import { TaskCard } from './task-card'
@@ -12,6 +13,7 @@ import { TaskDetail } from './task-detail'
 
 export function BoardPage() {
   const { projectId } = useParams<{ projectId: string }>()
+  const navigate = useNavigate()
   const { board, columns, tasks, setBoard, setColumns, setTasks, moveTask } = useBoardStore()
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
@@ -166,8 +168,18 @@ export function BoardPage() {
     >
       <div className="flex h-full flex-col">
         <div className="border-b bg-background px-6 py-4">
-          <h1 className="text-2xl font-bold">{project?.name}</h1>
-          <p className="text-sm text-muted-foreground">{project?.description || '项目看板'}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">{project?.name}</h1>
+              <p className="text-sm text-muted-foreground">{project?.description || '项目看板'}</p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/projects/${projectId}/workflows`)}
+            >
+              流程管理
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-1 gap-4 overflow-x-auto p-6">

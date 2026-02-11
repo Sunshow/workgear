@@ -1,0 +1,106 @@
+name: "simple-dev-pipeline"
+version: "1.0"
+description: "简单开发流水线：需求输入 → Agent 分析 → 人工确认 → Agent 执行 → 人工 Review"
+
+variables:
+  project_id: ""
+  requirement_text: ""
+
+nodes:
+  - id: input_requirement
+    name: "输入需求"
+    type: human_input
+    config:
+      form:
+        - field: requirement_text
+          type: textarea
+          label: "需求描述"
+          required: true
+        - field: priority
+          type: select
+          label: "优先级"
+          options: ["P0", "P1", "P2", "P3"]
+          default: "P1"
+
+  - id: analyze_requirement
+    name: "Agent 分析需求"
+    type: agent_task
+    agent:
+      role: "{{params.analyst_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        你是一个需求分析师。请分析以下需求并输出 PRD：
+        
+        需求描述：{{nodes.input_requirement.outputs.requirement_text}}
+        优先级：{{nodes.input_requirement.outputs.priority}}
+        
+        请输出：
+        1. 需求理解摘要
+        2. 功能点列表
+        3. 技术方案建议
+        4. 风险评估
+      mode: spec
+      artifact:
+        type: prd
+        title: "{{nodes.input_requirement.outputs.requirement_text | truncate(100)}} - PRD"
+    timeout: 300s
+    retry:
+      max_attempts: 2
+      backoff: exponential
+
+  - id: review_prd
+    name: "Review PRD"
+    type: human_review
+    config:
+      review_target: "{{nodes.analyze_requirement.outputs}}"
+      actions: ["approve", "reject", "edit"]
+      timeout: 24h
+    on_reject:
+      goto: analyze_requirement
+      max_loops: "{{params.max_review_loops}}"
+      inject:
+        feedback: "{{review.comment}}"
+
+  - id: execute_task
+    name: "执行任务"
+    type: agent_task
+    agent:
+      role: "{{params.developer_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        请按照以下 PRD 执行任务：
+        {{nodes.analyze_requirement.outputs}}
+        
+        人工反馈：{{nodes.review_prd.outputs.comment}}
+      mode: execute
+      git:
+        create_branch: true
+        branch_pattern: "feat/task-{{task.id}}-{{task.slug}}"
+        auto_commit: true
+    timeout: 600s
+
+  - id: review_code
+    name: "Review 代码"
+    type: human_review
+    config:
+      review_target: "{{nodes.execute_task.outputs}}"
+      show_diff: true
+      actions: ["approve", "reject", "edit"]
+      timeout: 24h
+    on_reject:
+      goto: execute_task
+      max_loops: "{{params.max_code_review_loops}}"
+      inject:
+        feedback: "{{review.comment}}"
+
+edges:
+  - from: input_requirement
+    to: analyze_requirement
+  - from: analyze_requirement
+    to: review_prd
+  - from: review_prd
+    to: execute_task
+  - from: execute_task
+    to: review_code

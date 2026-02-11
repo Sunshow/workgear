@@ -1,0 +1,79 @@
+name: "code-review-only"
+version: "1.0"
+description: "纯 Code Review 流程：提交代码 → Agent Review → 人工 Review"
+
+variables:
+  project_id: ""
+  branch_name: ""
+
+nodes:
+  - id: input_code_info
+    name: "输入代码信息"
+    type: human_input
+    config:
+      form:
+        - field: branch_name
+          type: text
+          label: "分支名称"
+          required: true
+        - field: description
+          type: textarea
+          label: "变更描述"
+          required: true
+        - field: review_focus
+          type: textarea
+          label: "Review 重点"
+          required: false
+
+  - id: agent_review
+    name: "Agent Review"
+    type: agent_task
+    agent:
+      role: "{{params.reviewer_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        你是一个代码审查专家。请 Review 以下代码变更：
+        
+        分支：{{nodes.input_code_info.outputs.branch_name}}
+        变更描述：{{nodes.input_code_info.outputs.description}}
+        Review 重点：{{nodes.input_code_info.outputs.review_focus}}
+        
+        请从以下维度进行 Review：
+        1. 代码质量（可读性、可维护性）
+        2. 潜在 Bug 和边界情况
+        3. 性能问题
+        4. 安全隐患
+        5. 测试覆盖
+        
+        输出格式：
+        - passed: true/false
+        - issues: [问题列表]
+        - suggestions: [改进建议]
+        - report: 详细报告
+      mode: review
+      git:
+        fetch_diff: true
+        branch: "{{nodes.input_code_info.outputs.branch_name}}"
+    timeout: 300s
+
+  - id: human_review
+    name: "人工 Review"
+    type: human_review
+    config:
+      review_target: "{{nodes.agent_review.outputs}}"
+      show_diff: true
+      actions: ["approve", "reject", "request_changes"]
+      timeout: 48h
+    on_reject:
+      goto: input_code_info
+      max_loops: "{{params.max_review_loops}}"
+      inject:
+        agent_feedback: "{{nodes.agent_review.outputs}}"
+        human_feedback: "{{review.comment}}"
+
+edges:
+  - from: input_code_info
+    to: agent_review
+  - from: agent_review
+    to: human_review

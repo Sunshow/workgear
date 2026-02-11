@@ -1,0 +1,133 @@
+name: "bug-fix-flow"
+version: "1.0"
+description: "Bug 修复流程：Bug 描述 → Agent 分析 → 修复 → 测试验证 → Review"
+
+variables:
+  project_id: ""
+  bug_description: ""
+  severity: ""
+
+nodes:
+  - id: input_bug
+    name: "输入 Bug 信息"
+    type: human_input
+    config:
+      form:
+        - field: bug_description
+          type: textarea
+          label: "Bug 描述"
+          required: true
+        - field: severity
+          type: select
+          label: "严重程度"
+          options: ["Critical", "High", "Medium", "Low"]
+          default: "Medium"
+        - field: reproduce_steps
+          type: textarea
+          label: "复现步骤"
+          required: false
+        - field: expected_behavior
+          type: textarea
+          label: "期望行为"
+          required: false
+
+  - id: analyze_bug
+    name: "Agent 分析 Bug"
+    type: agent_task
+    agent:
+      role: "{{params.analyst_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        你是一个 Bug 分析专家。请分析以下 Bug：
+        
+        Bug 描述：{{nodes.input_bug.outputs.bug_description}}
+        严重程度：{{nodes.input_bug.outputs.severity}}
+        复现步骤：{{nodes.input_bug.outputs.reproduce_steps}}
+        期望行为：{{nodes.input_bug.outputs.expected_behavior}}
+        
+        请输出：
+        1. 根因分析
+        2. 影响范围
+        3. 修复方案建议
+        4. 测试建议
+      mode: spec
+    timeout: 300s
+
+  - id: review_analysis
+    name: "Review 分析结果"
+    type: human_review
+    config:
+      review_target: "{{nodes.analyze_bug.outputs}}"
+      actions: ["approve", "reject", "edit"]
+    on_reject:
+      goto: analyze_bug
+      max_loops: 2
+      inject:
+        feedback: "{{review.comment}}"
+
+  - id: fix_bug
+    name: "修复 Bug"
+    type: agent_task
+    agent:
+      role: "{{params.developer_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        请按照以下分析结果修复 Bug：
+        {{nodes.analyze_bug.outputs}}
+        
+        人工反馈：{{nodes.review_analysis.outputs.comment}}
+      mode: execute
+      git:
+        create_branch: true
+        branch_pattern: "fix/bug-{{task.id}}-{{task.slug}}"
+        auto_commit: true
+    timeout: 600s
+
+  - id: verify_fix
+    name: "验证修复"
+    type: agent_task
+    agent:
+      role: "{{params.tester_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        请验证以下 Bug 修复：
+        
+        原始 Bug：{{nodes.input_bug.outputs.bug_description}}
+        修复方案：{{nodes.analyze_bug.outputs}}
+        代码变更：{{nodes.fix_bug.outputs}}
+        
+        请执行测试并确认 Bug 已修复。
+      mode: execute
+      git:
+        run_tests: true
+    timeout: 300s
+
+  - id: final_review
+    name: "最终 Review"
+    type: human_review
+    config:
+      review_target:
+        fix: "{{nodes.fix_bug.outputs}}"
+        verification: "{{nodes.verify_fix.outputs}}"
+      show_diff: true
+      actions: ["approve", "reject"]
+    on_reject:
+      goto: fix_bug
+      max_loops: "{{params.max_fix_loops}}"
+      inject:
+        feedback: "{{review.comment}}"
+
+edges:
+  - from: input_bug
+    to: analyze_bug
+  - from: analyze_bug
+    to: review_analysis
+  - from: review_analysis
+    to: fix_bug
+  - from: fix_bug
+    to: verify_fix
+  - from: verify_fix
+    to: final_review

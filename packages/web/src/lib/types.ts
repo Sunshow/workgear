@@ -113,3 +113,15 @@ export interface CreateWorkflowDto {
   dsl: string
   templateParams?: Record<string, any>
 }
+
+export interface UpdateWorkflowDto {
+  name?: string
+  dsl?: string
+  templateParams?: Record<string, any>
+}
+
+export interface ValidateDslResponse {
+  valid: boolean
+  errors: string[]
+  parsed?: any
+}

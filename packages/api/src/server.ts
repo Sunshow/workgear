@@ -5,6 +5,8 @@ import { projectRoutes } from './routes/projects.js'
 import { boardRoutes } from './routes/boards.js'
 import { taskRoutes } from './routes/tasks.js'
 import { healthRoutes } from './routes/health.js'
+import { workflowTemplateRoutes } from './routes/workflow-templates.js'
+import { workflowRoutes } from './routes/workflows.js'
 
 const PORT = parseInt(process.env.PORT || '4000', 10)
 const HOST = process.env.HOST || '0.0.0.0'
@@ -27,6 +29,8 @@ await app.register(healthRoutes, { prefix: '/api' })
 await app.register(projectRoutes, { prefix: '/api/projects' })
 await app.register(boardRoutes, { prefix: '/api/boards' })
 await app.register(taskRoutes, { prefix: '/api/tasks' })
+await app.register(workflowTemplateRoutes, { prefix: '/api/workflow-templates' })
+await app.register(workflowRoutes, { prefix: '/api/workflows' })
 
 // Start
 try {

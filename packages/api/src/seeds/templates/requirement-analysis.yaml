@@ -1,0 +1,122 @@
+name: "requirement-analysis"
+version: "1.0"
+description: "需求分析流程：需求输入 → Agent 分析 → 拆解 User Story → Review → 输出"
+
+variables:
+  project_id: ""
+  requirement_text: ""
+
+nodes:
+  - id: input_requirement
+    name: "输入需求"
+    type: human_input
+    config:
+      form:
+        - field: requirement_text
+          type: textarea
+          label: "需求描述"
+          required: true
+        - field: business_goal
+          type: textarea
+          label: "业务目标"
+          required: false
+        - field: target_users
+          type: text
+          label: "目标用户"
+          required: false
+        - field: deadline
+          type: text
+          label: "期望交付时间"
+          required: false
+
+  - id: analyze_requirement
+    name: "Agent 分析需求"
+    type: agent_task
+    agent:
+      role: "{{params.analyst_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        你是一个资深的需求分析师。请分析以下需求：
+        
+        需求描述：{{nodes.input_requirement.outputs.requirement_text}}
+        业务目标：{{nodes.input_requirement.outputs.business_goal}}
+        目标用户：{{nodes.input_requirement.outputs.target_users}}
+        期望交付时间：{{nodes.input_requirement.outputs.deadline}}
+        
+        请输出完整的 PRD，包括：
+        1. 需求背景和目标
+        2. 用户画像和使用场景
+        3. 功能需求列表（按优先级排序）
+        4. 非功能需求（性能、安全、可用性等）
+        5. 技术方案建议
+        6. 风险评估
+        7. 里程碑规划
+      mode: spec
+      artifact:
+        type: prd
+        title: "{{nodes.input_requirement.outputs.requirement_text | truncate(100)}} - PRD"
+    timeout: 300s
+
+  - id: review_prd
+    name: "Review PRD"
+    type: human_review
+    config:
+      review_target: "{{nodes.analyze_requirement.outputs}}"
+      actions: ["approve", "reject", "edit"]
+      timeout: 24h
+    on_reject:
+      goto: analyze_requirement
+      max_loops: "{{params.max_prd_review_loops}}"
+      inject:
+        feedback: "{{review.comment}}"
+
+  - id: split_user_stories
+    name: "拆解 User Story"
+    type: agent_task
+    agent:
+      role: "{{params.analyst_role}}"
+      model: "{{params.model}}"
+    config:
+      prompt_template: |
+        请根据以下 PRD 拆解出可独立开发的 User Story：
+        {{nodes.analyze_requirement.outputs}}
+        
+        人工反馈：{{nodes.review_prd.outputs.comment}}
+        
+        每个 User Story 应包括：
+        1. 标题（简洁明了）
+        2. 用户角色和目标（As a... I want... So that...）
+        3. 验收标准（Given/When/Then）
+        4. 优先级（P0/P1/P2/P3）
+        5. 预估工作量（Story Points）
+        6. 依赖关系（如有）
+        7. 技术实现要点
+      mode: spec
+      artifact:
+        type: user_story
+        title: "{{nodes.input_requirement.outputs.requirement_text | truncate(100)}} - User Stories"
+    timeout: 300s
+
+  - id: review_stories
+    name: "Review User Stories"
+    type: human_review
+    config:
+      review_target: "{{nodes.split_user_stories.outputs}}"
+      actions: ["approve", "reject", "edit"]
+      timeout: 24h
+    on_reject:
+      goto: split_user_stories
+      max_loops: "{{params.max_story_review_loops}}"
+      inject:
+        feedback: "{{review.comment}}"
+
+edges:
+  - from: input_requirement
+    to: analyze_requirement
+  - from: analyze_requirement
+    to: review_prd
+  - from: review_prd
+    to: split_user_stories
+  - from: split_user_stories
+    to: review_stories
