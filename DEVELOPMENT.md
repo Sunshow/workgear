@@ -617,16 +617,46 @@ export const db = drizzle(client, { schema })
 
 ### 技术栈
 
-- **语言**: Go 1.22
+- **语言**: Go 1.25
 - **gRPC**: google.golang.org/grpc v1.70.0
 - **日志**: go.uber.org/zap v1.27.0
 - **Protobuf**: google.golang.org/protobuf v1.36.1
+- **Docker SDK**: github.com/docker/docker（Agent 容器管理）
 
-### 当前状态（Phase 1）
+### 当前状态（Phase 4）
 
-Orchestrator 目前仅实现健康检查，完整的流程编排功能将在 Phase 3 实现。
+Orchestrator 已实现完整的流程引擎和真实 Agent 调用：
+- 持久化状态机 + DB 驱动 Worker 轮询
+- DAG 解析与推进
+- agent_task / human_review / human_input 节点
+- Docker 容器化 ClaudeCode Agent
+- 自动降级到 Mock（Docker 不可用或无 API Key 时）
 
-### 生成 Protobuf 代码（Phase 3）
+### Agent 配置
+
+在 `packages/orchestrator/.env` 中配置 Agent：
+
+```env
+# 方式一：直接使用 Anthropic API
+ANTHROPIC_API_KEY=sk-ant-xxx
+
+# 方式二：使用自定义端点 + Token（代理场景）
+ANTHROPIC_BASE_URL=https://your-proxy.example.com
+ANTHROPIC_AUTH_TOKEN=your-auth-token
+
+# 可选配置
+AGENT_DOCKER_IMAGE=workgear/agent-claude:latest
+CLAUDE_MODEL=claude-sonnet-3.5
+```
+
+启用真实 Agent 需要：
+1. Docker daemon 运行中
+2. `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN` 至少设置一个
+3. Agent 镜像已构建：`cd docker/agent-claude && docker build -t workgear/agent-claude:latest .`
+
+不满足条件时自动降级到 Mock Agent（模拟输出，2 秒延迟）。
+
+### 生成 Protobuf 代码
 
 ```bash
 cd packages/orchestrator

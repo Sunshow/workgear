@@ -75,14 +75,9 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 	}
 
 	// 2. Create container
-	cmd := req.Command
-	if len(cmd) == 0 {
-		cmd = []string{"/entrypoint.sh"}
-	}
-
 	containerConfig := &container.Config{
 		Image: imageName,
-		Cmd:   cmd,
+		Cmd:   req.Command, // nil means use image's ENTRYPOINT
 		Env:   envList,
 	}
 	if req.WorkDir != "" {

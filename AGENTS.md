@@ -86,6 +86,8 @@ scripts/         → 工具脚本
 | 开发 API | `docs/spec/08-api-design.md` | REST API、WebSocket 事件、gRPC Proto |
 | 了解实现细节 | `docs/spec/09-implementation-details.md` | 执行器、Outbox Worker、WebSocket 推送 |
 | 了解安全要求 | `docs/spec/11-security.md` | Agent 沙箱、数据分级、审计 |
+| Phase 3 实施方案 | `docs/spec/13-phase3-implementation.md` | 流程引擎 + Mock Agent 实施细节 |
+| Phase 4 实施方案 | `docs/spec/14-phase4-agent-implementation.md` | 真实 Agent 调用（Docker 容器化）实施细节 |
 
 ### 开发指引
 

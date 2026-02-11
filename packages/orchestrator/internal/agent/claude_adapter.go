@@ -74,7 +74,7 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 	// 3. Build executor request
 	return &ExecutorRequest{
 		Image:   a.image,
-		Command: []string{"/entrypoint.sh"},
+		Command: nil, // Use image's ENTRYPOINT
 		Env:     env,
 		WorkDir: "/workspace",
 		Timeout: 10 * time.Minute,
