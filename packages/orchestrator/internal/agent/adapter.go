@@ -127,15 +127,10 @@ func (r *Registry) MapRole(role, adapterName string) {
 func (r *Registry) GetAdapter(role string) (Adapter, error) {
 	adapterName, ok := r.roles[role]
 	if !ok {
-		// Default to mock
-		adapterName = "mock"
+		return nil, &NoAdapterError{Role: role}
 	}
 	adapter, ok := r.adapters[adapterName]
 	if !ok {
-		// Fallback to mock if available
-		if mock, exists := r.adapters["mock"]; exists {
-			return mock, nil
-		}
 		return nil, &NoAdapterError{Role: role}
 	}
 	return adapter, nil

@@ -45,42 +45,30 @@ func main() {
 	// 2. Create event bus
 	eventBus := event.NewBus(sugar)
 
-	// 3. Create agent registry with mock adapter
+	// 3. Create agent registry (Docker + API Key required)
 	registry := agent.NewRegistry()
-	registry.Register(agent.NewMockAdapter())
 
-	// Initialize real agent adapters if Docker is available
 	promptBuilder := agent.NewPromptBuilder()
 	dockerExec, err := agent.NewDockerExecutor(sugar)
 	if err != nil {
-		sugar.Warnw("Docker not available, using mock adapter only", "error", err)
-		// Map all roles to mock
-		registry.MapRole("general-developer", "mock")
-		registry.MapRole("requirement-analyst", "mock")
-		registry.MapRole("code-reviewer", "mock")
-		registry.MapRole("qa-engineer", "mock")
-	} else {
-		defer dockerExec.Close()
-		// Register ClaudeCode adapter
-		claudeAdapter := agent.NewCombinedAdapter(
-			agent.NewClaudeCodeAdapter(promptBuilder, os.Getenv("CLAUDE_MODEL")),
-			dockerExec,
-		)
-		registry.Register(claudeAdapter)
-
-		// Map roles: use claude-code if ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN is set, otherwise mock
-		adapterName := "mock"
-		if os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" {
-			adapterName = "claude-code"
-			sugar.Info("ClaudeCode adapter enabled (Docker + ANTHROPIC_API_KEY)")
-		} else {
-			sugar.Warn("ANTHROPIC_API_KEY not set, using mock adapter")
-		}
-		registry.MapRole("general-developer", adapterName)
-		registry.MapRole("requirement-analyst", adapterName)
-		registry.MapRole("code-reviewer", adapterName)
-		registry.MapRole("qa-engineer", adapterName)
+		sugar.Fatalf("Docker is required but not available: %v", err)
 	}
+	defer dockerExec.Close()
+
+	if os.Getenv("ANTHROPIC_API_KEY") == "" && os.Getenv("ANTHROPIC_AUTH_TOKEN") == "" {
+		sugar.Fatalf("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN must be set")
+	}
+
+	claudeAdapter := agent.NewCombinedAdapter(
+		agent.NewClaudeCodeAdapter(promptBuilder, os.Getenv("CLAUDE_MODEL")),
+		dockerExec,
+	)
+	registry.Register(claudeAdapter)
+	registry.MapRole("general-developer", "claude-code")
+	registry.MapRole("requirement-analyst", "claude-code")
+	registry.MapRole("code-reviewer", "claude-code")
+	registry.MapRole("qa-engineer", "claude-code")
+	sugar.Info("ClaudeCode adapter enabled (Docker + API credentials verified)")
 
 	// 4. Create flow executor
 	executor := engine.NewFlowExecutor(dbClient, eventBus, registry, sugar)
