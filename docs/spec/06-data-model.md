@@ -139,7 +139,7 @@ CREATE TABLE node_runs (
     config      JSONB,                 -- 节点配置快照
     
     -- Agent信息
-    agent_type  VARCHAR(50),           -- claude-code / kiro-droid / human
+    agent_type  VARCHAR(50),           -- claude-code / droid / human
     agent_role  VARCHAR(100),
     agent_instance_id VARCHAR(100),
     
@@ -262,7 +262,7 @@ CREATE TABLE agent_configs (
     project_id  UUID REFERENCES projects(id) ON DELETE CASCADE,
     
     name        VARCHAR(100) NOT NULL,
-    agent_type  VARCHAR(50) NOT NULL,  -- claude-code / kiro-droid / custom-http
+    agent_type  VARCHAR(50) NOT NULL,  -- claude-code / droid / custom-http
     
     -- 连接配置
     config      JSONB NOT NULL,        -- binary_path, endpoint, auth等

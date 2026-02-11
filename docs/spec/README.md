@@ -32,7 +32,7 @@
 
 ### 1.2 核心能力
 
-- **多Agent编排**：支持ClaudeCode、Kiro Droid等Agent可扩展接入
+- **多Agent编排**：支持ClaudeCode等CLI Agent可扩展接入
 - **流程引擎**：DSL定义 + 可视化DAG编排，支持条件分支、打回、并行
 - **人机协作**：流程节点支持人工Review/编辑/确认，类似Spec模式
 - **看板融合**：Task与流程节点绑定，启动任务自动触发流程

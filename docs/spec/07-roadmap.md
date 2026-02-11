@@ -27,7 +27,7 @@ Phase 2            Phase 3              Phase 4
 ✅ 多Agent并行     ✅ 本地Agent Runtime  ✅ 自定义Agent接入
 ✅ 子流程          ✅ 离线模式           ✅ 通知集成
 ✅ 流程可视化编辑器 ✅ 流程模板市场       ✅ CI/CD集成
-✅ 变量/表达式系统  ✅ Kiro Droid接入    ✅ 性能优化
+✅ 变量/表达式系统  ✅ Droid接入    ✅ 性能优化
 ✅ 持久化状态机    ✅ Outbox副作用控制   ✅ 幂等/回放/检查点
 ```
 
@@ -270,7 +270,7 @@ workgear/
 - Commit message规范化
 - 所有 Git 操作通过 Outbox 模式执行（幂等、可重试）
 
-### Kiro Droid接入
+### Droid接入
 - Droid Adapter实现
 - Droid配置文件生成
 - 与ClaudeCode的调度协同

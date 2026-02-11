@@ -106,11 +106,11 @@ func (a *ClaudeCodeAdapter) Execute(ctx context.Context, req *TaskRequest) (*Tas
 }
 ```
 
-## 4.3 Kiro Droid Adapter
+## 4.3 Droid Adapter
 
 ```go
-// Kiro Droid 通过 CLI + 配置文件方式接入
-type KiroDroidAdapter struct {
+// Droid 通过 CLI + 配置文件方式接入
+type DroidAdapter struct {
     binaryPath string
     configDir  string
 }
