@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { db } from '../db/index.js'
+import { client } from '../db/index.js'
 import { workflowTemplates } from '../db/schema.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -228,9 +229,11 @@ async function seedTemplates() {
   }
 
   console.log('✅ Templates seeded successfully!')
+  await client.end()
 }
 
-seedTemplates().catch((error) => {
+seedTemplates().catch(async (error) => {
   console.error('❌ Failed to seed templates:', error)
+  await client.end()
   process.exit(1)
 })
