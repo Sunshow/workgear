@@ -48,11 +48,39 @@ func main() {
 	// 3. Create agent registry with mock adapter
 	registry := agent.NewRegistry()
 	registry.Register(agent.NewMockAdapter())
-	// Map all roles to mock for now
-	registry.MapRole("general-developer", "mock")
-	registry.MapRole("requirement-analyst", "mock")
-	registry.MapRole("code-reviewer", "mock")
-	registry.MapRole("qa-engineer", "mock")
+
+	// Initialize real agent adapters if Docker is available
+	promptBuilder := agent.NewPromptBuilder()
+	dockerExec, err := agent.NewDockerExecutor(sugar)
+	if err != nil {
+		sugar.Warnw("Docker not available, using mock adapter only", "error", err)
+		// Map all roles to mock
+		registry.MapRole("general-developer", "mock")
+		registry.MapRole("requirement-analyst", "mock")
+		registry.MapRole("code-reviewer", "mock")
+		registry.MapRole("qa-engineer", "mock")
+	} else {
+		defer dockerExec.Close()
+		// Register ClaudeCode adapter
+		claudeAdapter := agent.NewCombinedAdapter(
+			agent.NewClaudeCodeAdapter(promptBuilder, os.Getenv("CLAUDE_MODEL")),
+			dockerExec,
+		)
+		registry.Register(claudeAdapter)
+
+		// Map roles: use claude-code if ANTHROPIC_API_KEY is set, otherwise mock
+		adapterName := "mock"
+		if os.Getenv("ANTHROPIC_API_KEY") != "" {
+			adapterName = "claude-code"
+			sugar.Info("ClaudeCode adapter enabled (Docker + ANTHROPIC_API_KEY)")
+		} else {
+			sugar.Warn("ANTHROPIC_API_KEY not set, using mock adapter")
+		}
+		registry.MapRole("general-developer", adapterName)
+		registry.MapRole("requirement-analyst", adapterName)
+		registry.MapRole("code-reviewer", adapterName)
+		registry.MapRole("qa-engineer", adapterName)
+	}
 
 	// 4. Create flow executor
 	executor := engine.NewFlowExecutor(dbClient, eventBus, registry, sugar)
@@ -80,7 +108,7 @@ func main() {
 	orchServer.Register(server)
 
 	sugar.Infof("WorkGear Orchestrator gRPC server listening on :%s", port)
-	sugar.Info("Phase 3: Persistent state machine + Mock agent mode")
+	sugar.Info("Phase 4: Persistent state machine + Docker agent support")
 
 	go func() {
 		if err := server.Serve(lis); err != nil {

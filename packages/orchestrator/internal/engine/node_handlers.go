@@ -50,14 +50,37 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 	if nodeRun.Input != nil {
 		_ = json.Unmarshal([]byte(*nodeRun.Input), &inputCtx)
 	}
+	if inputCtx == nil {
+		inputCtx = make(map[string]any)
+	}
+
+	// Get git information from task
+	gitRepoURL, gitBranch, err := e.db.GetTaskGitInfo(ctx, flowRun.TaskID)
+	if err != nil {
+		e.logger.Warnw("Failed to get git info", "error", err)
+	}
+
+	// Extract feedback from context (for reject/retry scenarios)
+	feedback := ""
+	if fb, ok := inputCtx["_feedback"]; ok {
+		if fbStr, ok := fb.(string); ok {
+			feedback = fbStr
+		}
+	}
+
+	// Store role in context for prompt builder
+	inputCtx["_role"] = role
 
 	agentReq := &agent.AgentRequest{
-		TaskID:    nodeRun.ID,
-		FlowRunID: nodeRun.FlowRunID,
-		NodeID:    nodeRun.NodeID,
-		Mode:      mode,
-		Prompt:    prompt,
-		Context:   inputCtx,
+		TaskID:     nodeRun.ID,
+		FlowRunID:  nodeRun.FlowRunID,
+		NodeID:     nodeRun.NodeID,
+		Mode:       mode,
+		Prompt:     prompt,
+		Context:    inputCtx,
+		GitRepoURL: gitRepoURL,
+		GitBranch:  gitBranch,
+		Feedback:   feedback,
 	}
 
 	// 5. Execute
@@ -66,6 +89,8 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		"role", role,
 		"mode", mode,
 		"adapter", adapter.Name(),
+		"git_repo", gitRepoURL,
+		"git_branch", gitBranch,
 	)
 
 	resp, err := adapter.Execute(ctx, agentReq)

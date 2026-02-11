@@ -28,6 +28,30 @@ func (c *Client) GetFlowRun(ctx context.Context, id string) (*FlowRun, error) {
 	return &fr, nil
 }
 
+// GetTaskGitInfo retrieves git repo URL and branch from a task
+func (c *Client) GetTaskGitInfo(ctx context.Context, taskID string) (repoURL string, branch string, err error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT p.git_repo_url, t.git_branch
+		FROM tasks t
+		JOIN projects p ON t.project_id = p.id
+		WHERE t.id = $1
+	`, taskID)
+
+	var repoURLPtr, branchPtr *string
+	if err := row.Scan(&repoURLPtr, &branchPtr); err != nil {
+		return "", "", fmt.Errorf("get task git info: %w", err)
+	}
+
+	if repoURLPtr != nil {
+		repoURL = *repoURLPtr
+	}
+	if branchPtr != nil {
+		branch = *branchPtr
+	}
+
+	return repoURL, branch, nil
+}
+
 // UpdateFlowRunStatus updates the status of a flow run
 func (c *Client) UpdateFlowRunStatus(ctx context.Context, id, status string) error {
 	var completedAt *time.Time

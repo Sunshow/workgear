@@ -1,17 +1,25 @@
 package agent
 
-import "context"
+import (
+	"context"
+	"time"
+)
+
+// ─── Domain Models ───
 
 // AgentRequest represents a request to an agent
 type AgentRequest struct {
-	TaskID    string         `json:"task_id"`
-	FlowRunID string        `json:"flow_run_id"`
-	NodeID    string         `json:"node_id"`
-	Mode      string         `json:"mode"` // spec / execute / review
-	Prompt    string         `json:"prompt"`
-	Context   map[string]any `json:"context"`
-	WorkDir   string         `json:"work_dir"`
-	GitBranch string         `json:"git_branch"`
+	TaskID     string         `json:"task_id"`
+	FlowRunID  string         `json:"flow_run_id"`
+	NodeID     string         `json:"node_id"`
+	Mode       string         `json:"mode"` // spec / execute / review
+	Prompt     string         `json:"prompt"`
+	Context    map[string]any `json:"context"`
+	WorkDir    string         `json:"work_dir"`
+	GitBranch  string         `json:"git_branch"`
+	GitRepoURL string         `json:"git_repo_url"`
+	RolePrompt string         `json:"role_prompt"`
+	Feedback   string         `json:"feedback"`
 }
 
 // AgentResponse represents the response from an agent
@@ -27,10 +35,68 @@ type ExecutionMetrics struct {
 	DurationMs  int64 `json:"duration_ms"`
 }
 
+// ─── Adapter Interface (unchanged, backward compatible) ───
+
 // Adapter is the interface all agent adapters must implement
 type Adapter interface {
 	Name() string
 	Execute(ctx context.Context, req *AgentRequest) (*AgentResponse, error)
+}
+
+// ─── Type Adapter + Executor (two-layer architecture) ───
+
+// TypeAdapter is the semantic layer: builds prompts, parses output
+type TypeAdapter interface {
+	Name() string
+	BuildRequest(ctx context.Context, req *AgentRequest) (*ExecutorRequest, error)
+	ParseResponse(execResp *ExecutorResponse) (*AgentResponse, error)
+}
+
+// Executor is the runtime layer: actually runs the agent
+type Executor interface {
+	Kind() string // "docker" / "cli" / "http"
+	Execute(ctx context.Context, req *ExecutorRequest) (*ExecutorResponse, error)
+}
+
+// ExecutorRequest is the runtime-layer request
+type ExecutorRequest struct {
+	Image   string            // Docker image name
+	Command []string          // Command to run inside container
+	Env     map[string]string // Environment variables
+	WorkDir string            // Working directory
+	Timeout time.Duration     // Execution timeout
+}
+
+// ExecutorResponse is the runtime-layer response
+type ExecutorResponse struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+// CombinedAdapter bridges TypeAdapter + Executor into the Adapter interface
+type CombinedAdapter struct {
+	typeAdapter TypeAdapter
+	executor    Executor
+}
+
+// NewCombinedAdapter creates a combined adapter from a type adapter and executor
+func NewCombinedAdapter(ta TypeAdapter, exec Executor) *CombinedAdapter {
+	return &CombinedAdapter{typeAdapter: ta, executor: exec}
+}
+
+func (a *CombinedAdapter) Name() string { return a.typeAdapter.Name() }
+
+func (a *CombinedAdapter) Execute(ctx context.Context, req *AgentRequest) (*AgentResponse, error) {
+	execReq, err := a.typeAdapter.BuildRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	execResp, err := a.executor.Execute(ctx, execReq)
+	if err != nil {
+		return nil, err
+	}
+	return a.typeAdapter.ParseResponse(execResp)
 }
 
 // Registry manages available agent adapters
