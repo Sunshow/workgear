@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import type { FlowRun, NodeRun } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { XCircle } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { useFlowRunEvents } from '@/hooks/use-websocket'
+import { XCircle, CheckCircle, RotateCcw, Clock, Play, AlertCircle, Pencil, Loader2 } from 'lucide-react'
 
 interface FlowTabProps {
   taskId: string
@@ -12,6 +14,7 @@ interface FlowTabProps {
 
 const statusLabels: Record<string, string> = {
   pending: '待执行',
+  queued: '排队中',
   running: '执行中',
   completed: '已完成',
   failed: '失败',
@@ -22,6 +25,7 @@ const statusLabels: Record<string, string> = {
 
 const statusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   pending: 'outline',
+  queued: 'outline',
   running: 'default',
   completed: 'secondary',
   failed: 'destructive',
@@ -30,37 +34,68 @@ const statusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'ou
   waiting_human: 'default',
 }
 
+const statusIcons: Record<string, React.ReactNode> = {
+  pending: <Clock className="h-4 w-4 text-muted-foreground" />,
+  queued: <Clock className="h-4 w-4 text-blue-500" />,
+  running: <Loader2 className="h-4 w-4 animate-spin text-blue-500" />,
+  completed: <CheckCircle className="h-4 w-4 text-green-500" />,
+  failed: <AlertCircle className="h-4 w-4 text-red-500" />,
+  cancelled: <XCircle className="h-4 w-4 text-muted-foreground" />,
+  rejected: <RotateCcw className="h-4 w-4 text-orange-500" />,
+  waiting_human: <Pencil className="h-4 w-4 text-yellow-500" />,
+}
+
 export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
   const [flowRuns, setFlowRuns] = useState<FlowRun[]>([])
   const [nodeRuns, setNodeRuns] = useState<NodeRun[]>([])
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
 
-  useEffect(() => {
-    loadFlowRuns()
-  }, [taskId, refreshKey])
+  const latestFlow = flowRuns[0] || null
 
-  async function loadFlowRuns() {
+  // Load data
+  const loadFlowRuns = useCallback(async () => {
     setLoading(true)
     try {
       const data = await api.get(`flow-runs?taskId=${taskId}`).json<FlowRun[]>()
       setFlowRuns(data)
       if (data.length > 0) {
-        await loadNodeRuns(data[0].id)
+        const nodes = await api.get(`flow-runs/${data[0].id}/nodes`).json<NodeRun[]>()
+        setNodeRuns(nodes)
       }
     } catch (error) {
       console.error('Failed to load flow runs:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [taskId])
 
-  async function loadNodeRuns(flowRunId: string) {
+  useEffect(() => {
+    loadFlowRuns()
+  }, [loadFlowRuns, refreshKey])
+
+  // Real-time updates via WebSocket
+  useFlowRunEvents(latestFlow?.id, {
+    onNodeStarted: () => refreshNodeRuns(),
+    onNodeCompleted: () => refreshNodeRuns(),
+    onNodeWaitingHuman: () => refreshNodeRuns(),
+    onNodeFailed: () => refreshNodeRuns(),
+    onNodeRejected: () => refreshNodeRuns(),
+    onFlowCompleted: () => loadFlowRuns(),
+    onFlowFailed: () => loadFlowRuns(),
+    onFlowCancelled: () => loadFlowRuns(),
+  })
+
+  async function refreshNodeRuns() {
+    if (!latestFlow) return
     try {
-      const data = await api.get(`flow-runs/${flowRunId}/nodes`).json<NodeRun[]>()
-      setNodeRuns(data)
+      const nodes = await api.get(`flow-runs/${latestFlow.id}/nodes`).json<NodeRun[]>()
+      setNodeRuns(nodes)
+      // Also refresh flow status
+      const flow = await api.get(`flow-runs/${latestFlow.id}`).json<FlowRun>()
+      setFlowRuns(prev => [flow, ...prev.slice(1)])
     } catch (error) {
-      console.error('Failed to load node runs:', error)
+      console.error('Failed to refresh:', error)
     }
   }
 
@@ -91,10 +126,12 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
     )
   }
 
-  const latestFlow = flowRuns[0]
+  // Deduplicate node runs: for each nodeId, show only the latest attempt
+  const latestNodeRuns = deduplicateNodeRuns(nodeRuns)
 
   return (
     <div className="space-y-4">
+      {/* Flow status header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">流程状态：</span>
@@ -103,12 +140,7 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
           </Badge>
         </div>
         {(latestFlow.status === 'pending' || latestFlow.status === 'running') && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleCancel(latestFlow.id)}
-            disabled={cancelling}
-          >
+          <Button variant="outline" size="sm" onClick={() => handleCancel(latestFlow.id)} disabled={cancelling}>
             <XCircle className="mr-1 h-4 w-4" />
             取消流程
           </Button>
@@ -121,37 +153,219 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
         </div>
       )}
 
+      {/* Node execution progress */}
       <div className="space-y-2">
         <h4 className="text-sm font-medium">节点执行进度</h4>
-        <div className="space-y-2">
-          {nodeRuns.map((node, index) => (
-            <div key={node.id} className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border bg-background text-xs font-medium">
-                {index + 1}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">{node.nodeId}</span>
-                  <Badge variant={statusColors[node.status] || 'outline'} className="text-xs">
-                    {statusLabels[node.status] || node.status}
-                  </Badge>
-                </div>
-                {node.error && (
-                  <p className="mt-1 text-xs text-destructive">{node.error}</p>
-                )}
-              </div>
-            </div>
+        <div className="space-y-1">
+          {latestNodeRuns.map((node) => (
+            <NodeRunItem
+              key={node.id}
+              nodeRun={node}
+              onActionComplete={refreshNodeRuns}
+            />
           ))}
         </div>
       </div>
 
       {flowRuns.length > 1 && (
-        <div className="pt-4">
-          <p className="text-xs text-muted-foreground">
-            共 {flowRuns.length} 次执行记录
-          </p>
+        <p className="pt-2 text-xs text-muted-foreground">共 {flowRuns.length} 次执行记录</p>
+      )}
+    </div>
+  )
+}
+
+// ─── NodeRunItem with inline review panel ───
+
+function NodeRunItem({ nodeRun, onActionComplete }: { nodeRun: NodeRun; onActionComplete: () => void }) {
+  const [expanded, setExpanded] = useState(nodeRun.status === 'waiting_human')
+  const [feedback, setFeedback] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  // Auto-expand when waiting for human
+  useEffect(() => {
+    if (nodeRun.status === 'waiting_human') {
+      setExpanded(true)
+    }
+  }, [nodeRun.status])
+
+  async function handleReview(action: 'approve' | 'reject' | 'edit_and_approve') {
+    setSubmitting(true)
+    try {
+      await api.post(`node-runs/${nodeRun.id}/review`, {
+        json: {
+          action,
+          feedback: action === 'reject' ? feedback : undefined,
+        },
+      })
+      setFeedback('')
+      onActionComplete()
+    } catch (error: any) {
+      alert(`操作失败: ${error.message}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleRetry() {
+    setSubmitting(true)
+    try {
+      await api.post(`node-runs/${nodeRun.id}/retry`)
+      onActionComplete()
+    } catch (error: any) {
+      alert(`重试失败: ${error.message}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const displayName = nodeRun.nodeName || nodeRun.nodeId
+  const isClickable = nodeRun.status === 'waiting_human' || nodeRun.status === 'completed' || nodeRun.status === 'failed'
+
+  return (
+    <div className="rounded-md border">
+      {/* Node header */}
+      <div
+        className={`flex items-center gap-3 px-3 py-2 ${isClickable ? 'cursor-pointer hover:bg-muted/50' : ''}`}
+        onClick={() => isClickable && setExpanded(!expanded)}
+      >
+        {statusIcons[nodeRun.status] || <Clock className="h-4 w-4" />}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm truncate">{displayName}</span>
+            {nodeRun.nodeType && (
+              <span className="text-xs text-muted-foreground">({nodeRun.nodeType})</span>
+            )}
+            {nodeRun.attempt > 1 && (
+              <span className="text-xs text-orange-500">第{nodeRun.attempt}次</span>
+            )}
+          </div>
+        </div>
+        <Badge variant={statusColors[nodeRun.status] || 'outline'} className="text-xs shrink-0">
+          {statusLabels[nodeRun.status] || nodeRun.status}
+        </Badge>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div className="border-t px-3 py-3 space-y-3">
+          {/* Show output for completed nodes */}
+          {nodeRun.output && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">输出</p>
+              <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-48">
+                {JSON.stringify(nodeRun.output, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Show input for waiting_human nodes */}
+          {nodeRun.status === 'waiting_human' && nodeRun.input && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">待审核内容</p>
+              <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-48">
+                {JSON.stringify(nodeRun.input, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Review actions for waiting_human */}
+          {nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'human_review' && (
+            <div className="space-y-2">
+              <Textarea
+                placeholder="输入反馈（拒绝时必填）..."
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                rows={2}
+                className="text-sm"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => handleReview('approve')} disabled={submitting}>
+                  <CheckCircle className="mr-1 h-3 w-3" />
+                  通过
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => handleReview('reject')} disabled={submitting || !feedback.trim()}>
+                  <RotateCcw className="mr-1 h-3 w-3" />
+                  打回
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Submit for human_input */}
+          {nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'human_input' && (
+            <div className="space-y-2">
+              <Textarea
+                placeholder="输入内容..."
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                rows={3}
+                className="text-sm"
+              />
+              <Button size="sm" onClick={async () => {
+                setSubmitting(true)
+                try {
+                  await api.post(`node-runs/${nodeRun.id}/submit`, {
+                    json: { text: feedback },
+                  })
+                  setFeedback('')
+                  onActionComplete()
+                } catch (error: any) {
+                  alert(`提交失败: ${error.message}`)
+                } finally {
+                  setSubmitting(false)
+                }
+              }} disabled={submitting || !feedback.trim()}>
+                <Play className="mr-1 h-3 w-3" />
+                提交
+              </Button>
+            </div>
+          )}
+
+          {/* Retry for failed nodes */}
+          {nodeRun.status === 'failed' && (
+            <div className="space-y-2">
+              {nodeRun.error && (
+                <p className="text-xs text-destructive">{nodeRun.error}</p>
+              )}
+              <Button size="sm" variant="outline" onClick={handleRetry} disabled={submitting}>
+                <RotateCcw className="mr-1 h-3 w-3" />
+                重试
+              </Button>
+            </div>
+          )}
+
+          {/* Review info for reviewed nodes */}
+          {nodeRun.reviewAction && (
+            <div className="text-xs text-muted-foreground">
+              <span>审核结果：{nodeRun.reviewAction}</span>
+              {nodeRun.reviewComment && <span> — {nodeRun.reviewComment}</span>}
+            </div>
+          )}
         </div>
       )}
     </div>
   )
+}
+
+// ─── Helpers ───
+
+function deduplicateNodeRuns(nodeRuns: NodeRun[]): NodeRun[] {
+  // Group by nodeId, keep the latest attempt
+  const map = new Map<string, NodeRun>()
+  for (const nr of nodeRuns) {
+    const existing = map.get(nr.nodeId)
+    if (!existing || nr.attempt > existing.attempt) {
+      map.set(nr.nodeId, nr)
+    }
+  }
+  // Preserve original order
+  const seen = new Set<string>()
+  const result: NodeRun[] = []
+  for (const nr of nodeRuns) {
+    if (!seen.has(nr.nodeId)) {
+      seen.add(nr.nodeId)
+      result.push(map.get(nr.nodeId)!)
+    }
+  }
+  return result
 }

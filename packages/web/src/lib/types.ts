@@ -133,6 +133,8 @@ export interface FlowRun {
   workflowId: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   error: string | null
+  dslSnapshot: string | null
+  variables: Record<string, any> | null
   startedAt: string | null
   completedAt: string | null
   createdAt: string
@@ -142,11 +144,16 @@ export interface NodeRun {
   id: string
   flowRunId: string
   nodeId: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'rejected' | 'waiting_human'
+  nodeType: string | null
+  nodeName: string | null
+  status: 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'rejected' | 'waiting_human' | 'cancelled'
   attempt: number
   input: Record<string, any> | null
   output: Record<string, any> | null
   error: string | null
+  reviewAction: string | null
+  reviewComment: string | null
+  reviewedAt: string | null
   startedAt: string | null
   completedAt: string | null
   createdAt: string

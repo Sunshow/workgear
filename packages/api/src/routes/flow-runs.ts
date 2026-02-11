@@ -3,6 +3,7 @@ import { eq, desc } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { flowRuns, nodeRuns, tasks, workflows, timelineEvents } from '../db/schema.js'
 import { parse } from 'yaml'
+import * as orchestrator from '../grpc/client.js'
 
 export async function flowRunRoutes(app: FastifyInstance) {
   // 创建 FlowRun（启动流程）
@@ -47,15 +48,26 @@ export async function flowRunRoutes(app: FastifyInstance) {
       })
       .returning()
 
-    // 4. 为每个 node 创建 node_runs 记录
-    const nodeRunsData = parsedDsl.nodes.map((node: any) => ({
-      flowRunId: flowRun.id,
-      nodeId: node.id,
-      status: 'pending',
-      attempt: 1,
-    }))
+    // 4. 调用 Orchestrator 启动流程
+    try {
+      const result = await orchestrator.startFlow(
+        flowRun.id,
+        workflow.dsl,
+        workflow.templateParams as Record<string, string> || {},
+        taskId,
+        workflowId
+      )
 
-    const createdNodeRuns = await db.insert(nodeRuns).values(nodeRunsData).returning()
+      if (!result.success) {
+        // 启动失败，更新状态
+        await db.update(flowRuns).set({ status: 'failed', error: result.error }).where(eq(flowRuns.id, flowRun.id))
+        return reply.status(500).send({ error: result.error || 'Failed to start flow' })
+      }
+    } catch (error: any) {
+      app.log.error(error)
+      await db.update(flowRuns).set({ status: 'failed', error: error.message }).where(eq(flowRuns.id, flowRun.id))
+      return reply.status(500).send({ error: error.message || 'Failed to communicate with orchestrator' })
+    }
 
     // 5. 写入 timeline_events
     await db.insert(timelineEvents).values({
@@ -68,10 +80,7 @@ export async function flowRunRoutes(app: FastifyInstance) {
       },
     })
 
-    return reply.status(201).send({
-      flowRun,
-      nodeRuns: createdNodeRuns,
-    })
+    return reply.status(201).send({ flowRun })
   })
 
   // 查询 Task 关联的所有 FlowRun
@@ -131,25 +140,19 @@ export async function flowRunRoutes(app: FastifyInstance) {
       return reply.status(422).send({ error: 'Cannot cancel completed or already cancelled flow' })
     }
 
-    const [updated] = await db
-      .update(flowRuns)
-      .set({
-        status: 'cancelled',
-        completedAt: new Date(),
-      })
-      .where(eq(flowRuns.id, id))
-      .returning()
+    // 调用 Orchestrator 取消流程
+    try {
+      const result = await orchestrator.cancelFlow(id)
+      if (!result.success) {
+        return reply.status(500).send({ error: result.error || 'Failed to cancel flow' })
+      }
+    } catch (error: any) {
+      app.log.error(error)
+      return reply.status(500).send({ error: error.message || 'Failed to communicate with orchestrator' })
+    }
 
-    // 写入 timeline
-    await db.insert(timelineEvents).values({
-      taskId: flowRun.taskId,
-      flowRunId: flowRun.id,
-      eventType: 'system_event',
-      content: {
-        message: '流程已取消',
-      },
-    })
-
+    // 重新查询更新后的状态
+    const [updated] = await db.select().from(flowRuns).where(eq(flowRuns.id, id))
     return updated
   })
 }

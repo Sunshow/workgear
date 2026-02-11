@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
     "drizzle-kit": "1.0.0-beta.15-859cf75",
     "pino-pretty": "^13.0.0",
     "tsx": "^4.19.0",

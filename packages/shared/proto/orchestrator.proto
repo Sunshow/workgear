@@ -5,18 +5,29 @@ package orchestrator;
 option go_package = "github.com/sunshow/workgear/orchestrator/internal/grpc/pb";
 
 service OrchestratorService {
+  // 流程管理
   rpc StartFlow(StartFlowRequest) returns (StartFlowResponse);
   rpc CancelFlow(CancelFlowRequest) returns (CancelFlowResponse);
-  rpc RejectNode(RejectNodeRequest) returns (RejectNodeResponse);
-  rpc ApproveNode(ApproveNodeRequest) returns (ApproveNodeResponse);
-  rpc EditNode(EditNodeRequest) returns (EditNodeResponse);
-  rpc RetryNode(RetryNodeRequest) returns (RetryNodeResponse);
+
+  // 人工操作
+  rpc ApproveNode(ApproveNodeRequest) returns (NodeActionResponse);
+  rpc RejectNode(RejectNodeRequest) returns (NodeActionResponse);
+  rpc EditNode(EditNodeRequest) returns (NodeActionResponse);
+  rpc SubmitHumanInput(SubmitHumanInputRequest) returns (NodeActionResponse);
+  rpc RetryNode(RetryNodeRequest) returns (NodeActionResponse);
+
+  // 事件流（服务端流式推送）
+  rpc EventStream(EventStreamRequest) returns (stream ServerEvent);
 }
+
+// ─── 流程管理 ───
 
 message StartFlowRequest {
   string flow_run_id = 1;
   string workflow_dsl = 2;
   map<string, string> variables = 3;
+  string task_id = 4;
+  string workflow_id = 5;
 }
 
 message StartFlowResponse {
@@ -30,24 +41,18 @@ message CancelFlowRequest {
 
 message CancelFlowResponse {
   bool success = 1;
-}
-
-message RejectNodeRequest {
-  string node_run_id = 1;
-  string feedback = 2;
-}
-
-message RejectNodeResponse {
-  bool success = 1;
   string error = 2;
 }
+
+// ─── 人工操作 ───
 
 message ApproveNodeRequest {
   string node_run_id = 1;
 }
 
-message ApproveNodeResponse {
-  bool success = 1;
+message RejectNodeRequest {
+  string node_run_id = 1;
+  string feedback = 2;
 }
 
 message EditNodeRequest {
@@ -56,15 +61,31 @@ message EditNodeRequest {
   string change_summary = 3;
 }
 
-message EditNodeResponse {
-  bool success = 1;
-  string error = 2;
+message SubmitHumanInputRequest {
+  string node_run_id = 1;
+  string data_json = 2;
 }
 
 message RetryNodeRequest {
   string node_run_id = 1;
 }
 
-message RetryNodeResponse {
+message NodeActionResponse {
   bool success = 1;
+  string error = 2;
+}
+
+// ─── 事件流 ───
+
+message EventStreamRequest {
+  string flow_run_id = 1;  // 可选，为空则接收所有事件
+}
+
+message ServerEvent {
+  string event_type = 1;     // node.queued / node.started / node.completed / node.waiting_human / node.failed / node.rejected / flow.started / flow.completed / flow.failed / flow.cancelled
+  string flow_run_id = 2;
+  string node_run_id = 3;
+  string node_id = 4;
+  string data_json = 5;      // JSON 序列化的事件数据
+  int64 timestamp = 6;
 }
