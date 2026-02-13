@@ -99,6 +99,22 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		Feedback:   feedback,
 	}
 
+	// Resolve OpenSpec config for opsx_plan / opsx_apply modes
+	if nodeDef.Config != nil && nodeDef.Config.Opsx != nil {
+		opsxDef := nodeDef.Config.Opsx
+		changeName := opsxDef.ChangeName
+		// Render change_name template expression
+		if rendered, err := RenderTemplate(changeName, runtimeCtx); err == nil {
+			changeName = rendered
+		}
+		agentReq.OpsxConfig = &agent.OpsxConfig{
+			ChangeName:    changeName,
+			Schema:        opsxDef.Schema,
+			InitIfMissing: opsxDef.InitIfMissing,
+			Action:        opsxDef.Action,
+		}
+	}
+
 	// 5. Execute
 	e.logger.Infow("Executing agent task",
 		"node_id", nodeRun.NodeID,

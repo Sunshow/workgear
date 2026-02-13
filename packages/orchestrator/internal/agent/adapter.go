@@ -12,7 +12,7 @@ type AgentRequest struct {
 	TaskID     string         `json:"task_id"`
 	FlowRunID  string         `json:"flow_run_id"`
 	NodeID     string         `json:"node_id"`
-	Mode       string         `json:"mode"` // spec / execute / review
+	Mode       string         `json:"mode"` // spec / execute / review / opsx_plan / opsx_apply
 	Prompt     string         `json:"prompt"`
 	Context    map[string]any `json:"context"`
 	WorkDir    string         `json:"work_dir"`
@@ -20,6 +20,15 @@ type AgentRequest struct {
 	GitRepoURL string         `json:"git_repo_url"`
 	RolePrompt string         `json:"role_prompt"`
 	Feedback   string         `json:"feedback"`
+	OpsxConfig *OpsxConfig    `json:"opsx,omitempty"`
+}
+
+// OpsxConfig holds OpenSpec-specific configuration for opsx_plan / opsx_apply modes
+type OpsxConfig struct {
+	ChangeName    string `json:"change_name" yaml:"change_name"`
+	Schema        string `json:"schema,omitempty" yaml:"schema"`
+	InitIfMissing bool   `json:"init_if_missing,omitempty" yaml:"init_if_missing"`
+	Action        string `json:"action,omitempty" yaml:"action"` // "", "archive", "sync"
 }
 
 // AgentResponse represents the response from an agent

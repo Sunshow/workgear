@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -69,6 +70,20 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 	// Model selection
 	if a.model != "" {
 		env["CLAUDE_MODEL"] = a.model
+	}
+
+	// OpenSpec configuration (opsx_plan / opsx_apply modes)
+	if req.Mode == "opsx_plan" || req.Mode == "opsx_apply" {
+		if opsx := req.OpsxConfig; opsx != nil {
+			env["OPSX_CHANGE_NAME"] = opsx.ChangeName
+			if opsx.Schema != "" {
+				env["OPSX_SCHEMA"] = opsx.Schema
+			}
+			env["OPSX_INIT_IF_MISSING"] = strconv.FormatBool(opsx.InitIfMissing)
+			if opsx.Action != "" {
+				env["OPSX_ACTION"] = opsx.Action
+			}
+		}
 	}
 
 	// 3. Build executor request

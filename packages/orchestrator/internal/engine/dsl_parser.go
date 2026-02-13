@@ -39,12 +39,23 @@ type AgentDef struct {
 
 // NodeConfigDef holds node-specific configuration
 type NodeConfigDef struct {
-	Mode           string          `yaml:"mode"` // spec / execute / review
+	Mode           string          `yaml:"mode"` // spec / execute / review / opsx_plan / opsx_apply
 	PromptTemplate string          `yaml:"prompt_template"`
 	ReviewTarget   string          `yaml:"review_target"`
 	Actions        []string        `yaml:"actions"`
 	Form           []FormFieldDef  `yaml:"form"`
 	Timeout        string          `yaml:"timeout"`
+	Opsx           *OpsxConfigDef  `yaml:"opsx"`
+	ShowArtifacts  bool            `yaml:"show_artifacts"`
+	ArtifactPaths  []string        `yaml:"artifact_paths"`
+}
+
+// OpsxConfigDef holds OpenSpec configuration in DSL
+type OpsxConfigDef struct {
+	ChangeName    string `yaml:"change_name"`
+	Schema        string `yaml:"schema"`
+	InitIfMissing bool   `yaml:"init_if_missing"`
+	Action        string `yaml:"action"` // "", "archive", "sync"
 }
 
 // FormFieldDef defines a form field for human_input nodes

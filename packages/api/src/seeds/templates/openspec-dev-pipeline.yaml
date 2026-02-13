@@ -1,0 +1,177 @@
+name: "openspec-dev-pipeline"
+version: "1.0"
+description: "基于 OpenSpec 的 Spec 驱动开发流水线：需求 → Spec 规划 → Review → 实施 → Code Review → 归档"
+
+variables:
+  project_id: ""
+  requirement_text: ""
+  change_name: ""
+
+nodes:
+  # ─── 阶段 1：提交需求 ───
+  - id: submit_requirement
+    name: "提交需求"
+    type: human_input
+    config:
+      form:
+        - field: requirement_text
+          type: textarea
+          label: "需求描述"
+          required: true
+        - field: change_name
+          type: text
+          label: "变更名称（英文，如 add-dark-mode）"
+          required: true
+
+  # ─── 阶段 2：Agent 生成 Spec ───
+  - id: generate_spec
+    name: "Agent 生成 Spec"
+    type: agent_task
+    agent:
+      role: "{{params.spec_role}}"
+      model: "{{params.model}}"
+    config:
+      mode: opsx_plan
+      opsx:
+        change_name: "{{nodes.submit_requirement.outputs.change_name}}"
+        schema: "{{params.spec_schema}}"
+        init_if_missing: true
+      prompt_template: |
+        请基于以下需求，使用 OpenSpec 工作流生成完整的规划文档：
+
+        需求描述：{{nodes.submit_requirement.outputs.requirement_text}}
+
+        你需要：
+        1. 创建 OpenSpec change: {{nodes.submit_requirement.outputs.change_name}}
+        2. 生成 proposal.md（为什么做、做什么、影响范围）
+        3. 生成 delta specs（使用 Given/When/Then 格式，标注 ADDED/MODIFIED/REMOVED）
+        4. 生成 design.md（技术方案、数据流、文件变更清单）
+        5. 生成 tasks.md（按模块分组的实施任务清单，使用 [ ] 复选框格式）
+
+        请确保所有文件保存到 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/ 目录下。
+    timeout: 600s
+    retry:
+      max_attempts: 2
+      backoff: exponential
+
+  # ─── 阶段 3：人工 Review Spec ───
+  - id: review_spec
+    name: "Review Spec 文档"
+    type: human_review
+    config:
+      review_target: "{{nodes.generate_spec.outputs}}"
+      show_artifacts: true
+      artifact_paths:
+        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/proposal.md"
+        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/"
+        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/design.md"
+        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/tasks.md"
+      actions: ["approve", "reject", "edit"]
+      timeout: 24h
+    on_reject:
+      goto: generate_spec
+      max_loops: "{{params.max_spec_review_loops}}"
+      inject:
+        feedback: "{{review.comment}}"
+
+  # ─── 阶段 4：Agent 按 tasks.md 实施代码 ───
+  - id: implement_code
+    name: "Agent 实施代码"
+    type: agent_task
+    agent:
+      role: "{{params.developer_role}}"
+      model: "{{params.model}}"
+    config:
+      mode: opsx_apply
+      opsx:
+        change_name: "{{nodes.submit_requirement.outputs.change_name}}"
+      prompt_template: |
+        请按照 OpenSpec 的 tasks.md 实施所有任务。
+
+        变更名称：{{nodes.submit_requirement.outputs.change_name}}
+
+        要求：
+        1. 读取 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/tasks.md
+        2. 读取 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/design.md
+        3. 参考 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/ 中的场景定义
+        4. 逐项实施，完成后在 tasks.md 中打勾 [x]
+        5. 确保代码符合 design.md 中的技术方案
+      git:
+        create_branch: true
+        branch_pattern: "feat/{{nodes.submit_requirement.outputs.change_name}}"
+        auto_commit: true
+    timeout: 1200s
+
+  # ─── 阶段 5：Agent Code Review ───
+  - id: code_review
+    name: "Agent Code Review"
+    type: agent_task
+    agent:
+      role: "{{params.reviewer_role}}"
+      model: "{{params.model}}"
+    config:
+      mode: review
+      prompt_template: |
+        请 Review 以下代码变更，对照 OpenSpec 的 specs 和 design 文档：
+
+        变更名称：{{nodes.submit_requirement.outputs.change_name}}
+        Spec 文档目录：openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/
+
+        检查维度：
+        1. 完整性：所有 tasks.md 中的任务是否都已实施
+        2. 正确性：实施是否符合 specs 中的需求和场景
+        3. 一致性：代码是否符合 design.md 中的技术方案
+        4. 代码质量：可维护性、安全性、性能
+    timeout: 600s
+
+  # ─── 阶段 6：人工最终确认 ───
+  - id: final_review
+    name: "人工最终确认"
+    type: human_review
+    config:
+      review_target: "{{nodes.code_review.outputs}}"
+      show_artifacts: true
+      artifact_paths:
+        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/"
+      actions: ["approve", "reject"]
+      timeout: 24h
+    on_reject:
+      goto: implement_code
+      max_loops: "{{params.max_code_review_loops}}"
+      inject:
+        feedback: "{{review.comment}}"
+
+  # ─── 阶段 7：归档 Spec ───
+  - id: archive_spec
+    name: "归档 Spec"
+    type: agent_task
+    agent:
+      role: "{{params.spec_role}}"
+      model: "{{params.model}}"
+    config:
+      mode: opsx_plan
+      opsx:
+        change_name: "{{nodes.submit_requirement.outputs.change_name}}"
+        action: archive
+      prompt_template: |
+        请归档已完成的 OpenSpec 变更：{{nodes.submit_requirement.outputs.change_name}}
+
+        操作步骤：
+        1. 将 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/ 中的 delta specs 合并到 openspec/specs/（Source of Truth）
+        2. 将 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/ 移动到 openspec/changes/archive/
+        3. 确保 openspec/specs/ 中的内容是最新的完整规范
+    timeout: 300s
+
+edges:
+  - from: submit_requirement
+    to: generate_spec
+  - from: generate_spec
+    to: review_spec
+  - from: review_spec
+    to: implement_code
+  - from: implement_code
+    to: code_review
+  - from: code_review
+    to: final_review
+  - from: final_review
+    to: archive_spec

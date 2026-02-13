@@ -11,6 +11,7 @@ import { workflowRoutes } from './routes/workflows.js'
 import { flowRunRoutes } from './routes/flow-runs.js'
 import { artifactRoutes } from './routes/artifacts.js'
 import { nodeRunRoutes } from './routes/node-runs.js'
+import { openspecRoutes } from './routes/openspec.js'
 import { wsGateway, startEventForwarding, stopEventForwarding } from './ws/gateway.js'
 
 const PORT = parseInt(process.env.PORT || '4000', 10)
@@ -40,6 +41,7 @@ await app.register(workflowRoutes, { prefix: '/api/workflows' })
 await app.register(flowRunRoutes, { prefix: '/api/flow-runs' })
 await app.register(artifactRoutes, { prefix: '/api/artifacts' })
 await app.register(nodeRunRoutes, { prefix: '/api/node-runs' })
+await app.register(openspecRoutes, { prefix: '/api/projects/:projectId/openspec' })
 
 // WebSocket
 await app.register(wsGateway)

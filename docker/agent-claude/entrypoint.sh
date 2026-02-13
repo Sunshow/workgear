@@ -33,12 +33,23 @@ else
     cd "$WORKSPACE"
 fi
 
+# ─── Step 1.5: Initialize OpenSpec (if needed) ───
+if [ "$AGENT_MODE" = "opsx_plan" ] || [ "$AGENT_MODE" = "opsx_apply" ]; then
+    echo "[agent] OpenSpec mode detected: $AGENT_MODE"
+    if [ ! -d "openspec" ] && [ "$OPSX_INIT_IF_MISSING" = "true" ]; then
+        echo "[agent] Initializing OpenSpec..."
+        openspec init --tools none --force 2>&1 || {
+            echo "[agent] Warning: openspec init failed, continuing anyway..."
+        }
+    fi
+fi
+
 # ─── Step 2: Run Claude CLI ───
 echo "[agent] Running claude CLI..."
 
 # Build claude command
 CLAUDE_CMD="claude"
-CLAUDE_ARGS="-p"
+CLAUDE_ARGS="-p --dangerously-skip-permissions"
 
 # Add model flag if specified
 if [ -n "$CLAUDE_MODEL" ]; then
@@ -58,8 +69,13 @@ $CLAUDE_CMD $CLAUDE_ARGS "$AGENT_PROMPT" > "$RESULT_FILE" 2>/tmp/claude_stderr.l
     exit $EXIT_CODE
 }
 
-# ─── Step 3: Git commit & push (execute mode only) ───
-if [ "$AGENT_MODE" = "execute" ] && [ -n "$GIT_REPO_URL" ]; then
+# ─── Step 3: Git commit & push (execute / opsx modes) ───
+SHOULD_PUSH="false"
+if [ "$AGENT_MODE" = "execute" ] || [ "$AGENT_MODE" = "opsx_plan" ] || [ "$AGENT_MODE" = "opsx_apply" ]; then
+    SHOULD_PUSH="true"
+fi
+
+if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
     echo "[agent] Checking for file changes..."
     cd "$WORKSPACE"
 
@@ -67,10 +83,30 @@ if [ "$AGENT_MODE" = "execute" ] && [ -n "$GIT_REPO_URL" ]; then
         echo "[agent] Committing changes..."
         git add -A
 
-        COMMIT_MSG="agent: auto-commit from workflow"
-        if [ -n "$NODE_ID" ]; then
-            COMMIT_MSG="agent($NODE_ID): auto-commit from workflow"
-        fi
+        # Build commit message based on mode
+        case "$AGENT_MODE" in
+            opsx_plan)
+                COMMIT_MSG="spec: generate OpenSpec artifacts"
+                if [ -n "$OPSX_CHANGE_NAME" ]; then
+                    COMMIT_MSG="spec($OPSX_CHANGE_NAME): generate OpenSpec artifacts"
+                fi
+                if [ "$OPSX_ACTION" = "archive" ]; then
+                    COMMIT_MSG="spec($OPSX_CHANGE_NAME): archive OpenSpec change"
+                fi
+                ;;
+            opsx_apply)
+                COMMIT_MSG="feat: implement tasks from OpenSpec"
+                if [ -n "$OPSX_CHANGE_NAME" ]; then
+                    COMMIT_MSG="feat($OPSX_CHANGE_NAME): implement tasks from OpenSpec"
+                fi
+                ;;
+            *)
+                COMMIT_MSG="agent: auto-commit from workflow"
+                if [ -n "$NODE_ID" ]; then
+                    COMMIT_MSG="agent($NODE_ID): auto-commit from workflow"
+                fi
+                ;;
+        esac
 
         git commit -m "$COMMIT_MSG" 2>&1
         echo "[agent] Pushing to $GIT_BRANCH..."

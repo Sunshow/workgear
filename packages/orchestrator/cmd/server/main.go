@@ -68,6 +68,7 @@ func main() {
 	registry.MapRole("requirement-analyst", "claude-code")
 	registry.MapRole("code-reviewer", "claude-code")
 	registry.MapRole("qa-engineer", "claude-code")
+	registry.MapRole("spec-architect", "claude-code")
 	sugar.Info("ClaudeCode adapter enabled (Docker + API credentials verified)")
 
 	// 4. Create flow executor

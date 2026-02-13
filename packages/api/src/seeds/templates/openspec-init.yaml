@@ -1,0 +1,51 @@
+name: "openspec-init"
+version: "1.0"
+description: "在项目 Git 仓库中初始化 OpenSpec 目录结构和配置，生成初始 Spec Source of Truth"
+
+variables:
+  project_id: ""
+
+nodes:
+  - id: init_openspec
+    name: "初始化 OpenSpec"
+    type: agent_task
+    agent:
+      role: "{{params.spec_role}}"
+      model: "{{params.model}}"
+    config:
+      mode: opsx_plan
+      opsx:
+        change_name: "init"
+        init_if_missing: true
+      prompt_template: |
+        请在项目中初始化 OpenSpec 规范驱动开发环境：
+
+        1. 运行 openspec init 初始化目录结构
+        2. 分析项目的 README.md、package.json、目录结构等，了解项目技术栈和架构
+        3. 生成合适的 openspec/config.yaml 配置文件
+        4. 为项目现有的核心功能编写初始 specs（Source of Truth），放在 openspec/specs/ 目录下
+        5. 使用 Given/When/Then 格式描述已有功能的行为规范
+
+        注意：这是首次初始化，请确保 specs 覆盖项目的主要功能模块。
+    timeout: 600s
+
+  - id: review_init
+    name: "Review 初始化结果"
+    type: human_review
+    config:
+      review_target: "{{nodes.init_openspec.outputs}}"
+      show_artifacts: true
+      artifact_paths:
+        - "openspec/config.yaml"
+        - "openspec/specs/"
+      actions: ["approve", "reject"]
+      timeout: 24h
+    on_reject:
+      goto: init_openspec
+      max_loops: 2
+      inject:
+        feedback: "{{review.comment}}"
+
+edges:
+  - from: init_openspec
+    to: review_init

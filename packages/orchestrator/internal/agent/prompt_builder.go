@@ -35,6 +35,15 @@ var DefaultRolePrompts = map[string]string{
 2. 验证功能是否符合验收标准
 3. 检查边界条件和异常情况
 4. 输出测试报告`,
+
+	"spec-architect": `你是一个资深的 Spec 架构师，精通 OpenSpec 规范驱动开发（SDD）方法论。你的职责是：
+1. 将需求转化为结构化的 OpenSpec 规划文档
+2. 编写清晰的 proposal.md（为什么做、做什么、影响范围）
+3. 使用 Given/When/Then 格式编写 delta specs（ADDED/MODIFIED/REMOVED）
+4. 设计合理的技术方案（design.md）
+5. 拆分可执行的任务清单（tasks.md）
+6. 维护项目的 Spec Source of Truth
+请确保所有产出符合 OpenSpec 目录结构规范。`,
 }
 
 // PromptBuilder constructs the full prompt for an agent request
@@ -146,6 +155,31 @@ func modeInstruction(mode string) string {
 - 是否通过（passed: true/false）
 - 发现的问题列表
 - 改进建议`
+	case "opsx_plan":
+		return `当前模式：OpenSpec 规划（opsx_plan）
+你正在使用 OpenSpec 工作流。请按以下步骤操作：
+1. 如果项目中没有 openspec/ 目录，先运行 openspec init
+2. 创建新的 change（使用环境变量 OPSX_CHANGE_NAME 指定的名称）
+3. 生成所有规划 artifact：
+   - proposal.md（为什么做、做什么、影响范围）
+   - specs/ 目录下的 delta spec 文件（使用 Given/When/Then 格式，标注 ADDED/MODIFIED/REMOVED）
+   - design.md（技术方案、数据流、文件变更清单）
+   - tasks.md（按模块分组的实施任务清单，使用 [ ] 复选框格式）
+4. 确保所有文件都已保存到 openspec/changes/<change-name>/ 目录下
+5. 所有变更都要 git add
+
+注意：如果环境变量 OPSX_ACTION 为 "archive"，则执行归档操作：
+- 将 delta specs 合并到 openspec/specs/（Source of Truth）
+- 将变更目录移到 openspec/changes/archive/`
+	case "opsx_apply":
+		return `当前模式：OpenSpec 实施（opsx_apply）
+你正在使用 OpenSpec 工作流执行实施。请按以下步骤操作：
+1. 读取 openspec/changes/<change-name>/tasks.md 获取任务清单
+2. 读取 openspec/changes/<change-name>/design.md 了解技术方案
+3. 参考 openspec/changes/<change-name>/specs/ 中的需求和场景定义
+4. 逐项实施任务，完成后在 tasks.md 中标记 [x]
+5. 确保实施符合 specs 中定义的需求和场景
+6. 所有代码变更都要 git add`
 	default:
 		return ""
 	}
