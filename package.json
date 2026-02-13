@@ -4,7 +4,7 @@
   "private": true,
   "description": "AI Agent 工作流编排平台",
   "scripts": {
-    "dev": "pnpm run dev:web & pnpm run dev:api & pnpm run dev:orchestrator",
+    "dev": "concurrently -k -n web,api,orch -c blue,green,yellow \"pnpm:dev:web\" \"pnpm:dev:api\" \"pnpm:dev:orchestrator\"",
     "dev:web": "pnpm --filter @workgear/web dev",
     "dev:api": "pnpm --filter @workgear/api dev",
     "dev:orchestrator": "cd packages/orchestrator && make run",
@@ -15,5 +15,8 @@
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
   },
-  "packageManager": "pnpm@10.28.2"
+  "packageManager": "pnpm@10.28.2",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }

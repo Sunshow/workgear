@@ -11,7 +11,7 @@ import { workflowRoutes } from './routes/workflows.js'
 import { flowRunRoutes } from './routes/flow-runs.js'
 import { artifactRoutes } from './routes/artifacts.js'
 import { nodeRunRoutes } from './routes/node-runs.js'
-import { wsGateway, startEventForwarding } from './ws/gateway.js'
+import { wsGateway, startEventForwarding, stopEventForwarding } from './ws/gateway.js'
 
 const PORT = parseInt(process.env.PORT || '4000', 10)
 const HOST = process.env.HOST || '0.0.0.0'
@@ -51,6 +51,16 @@ try {
 
   // Start forwarding Orchestrator events to WebSocket clients
   startEventForwarding(app.log)
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    app.log.info('Shutting down...')
+    stopEventForwarding()
+    await app.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 } catch (err) {
   app.log.error(err)
   process.exit(1)

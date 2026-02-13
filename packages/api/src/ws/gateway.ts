@@ -11,6 +11,7 @@ interface WSClient {
 const clients = new Map<WebSocket, WSClient>()
 
 let eventStreamHandle: { cancel: () => void } | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 export async function wsGateway(app: FastifyInstance) {
   app.get('/ws', { websocket: true }, (socket) => {
@@ -97,7 +98,7 @@ export function startEventForwarding(logger: { info: (...args: any[]) => void; e
       (err: Error) => {
         logger.warn(`Orchestrator event stream error: ${err.message}`)
         // Reconnect after delay
-        setTimeout(connectStream, 3000)
+        reconnectTimer = setTimeout(connectStream, 3000)
       },
     )
   }
@@ -106,6 +107,10 @@ export function startEventForwarding(logger: { info: (...args: any[]) => void; e
 }
 
 export function stopEventForwarding() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
   if (eventStreamHandle) {
     eventStreamHandle.cancel()
     eventStreamHandle = null
