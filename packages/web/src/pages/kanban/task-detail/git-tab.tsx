@@ -16,11 +16,46 @@ interface CommitInfo {
   branch: string
 }
 
+interface ChangedFileDetail {
+  path: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed'
+}
+
+// SHA256 hash using Web Crypto API (for GitHub PR diff anchor)
+async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text)
+  const hash = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+// StatusBadge: renders A/M/D/R single-letter badge with color
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { letter: string; className: string }> = {
+    added:    { letter: 'A', className: 'bg-green-100 text-green-700 border-green-200' },
+    modified: { letter: 'M', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+    deleted:  { letter: 'D', className: 'bg-red-100 text-red-700 border-red-200' },
+    renamed:  { letter: 'R', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+  }
+  const c = config[status]
+  if (!c) return null
+  return (
+    <Badge variant="outline" className={`px-1 py-0 text-[10px] font-mono leading-tight w-5 justify-center shrink-0 ${c.className}`}>
+      {c.letter}
+    </Badge>
+  )
+}
+
 export function GitTab({ taskId, gitBranch }: GitTabProps) {
   const [copied, setCopied] = useState(false)
   const [flowRun, setFlowRun] = useState<FlowRun | null>(null)
   const [commits, setCommits] = useState<CommitInfo[]>([])
   const [changedFiles, setChangedFiles] = useState<string[]>([])
+  const [fileDetails, setFileDetails] = useState<Map<string, string>>(new Map())
+  const [repoUrl, setRepoUrl] = useState<string>('')
+  const [fileDiffHashes, setFileDiffHashes] = useState<Map<string, string>>(new Map())
   const [filesExpanded, setFilesExpanded] = useState(false)
   const [merging, setMerging] = useState(false)
   const [mergeError, setMergeError] = useState<string | null>(null)
@@ -40,6 +75,8 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
 
       const commitList: CommitInfo[] = []
       const allFiles = new Set<string>()
+      const allFileDetails = new Map<string, string>() // path → status
+      let latestRepoUrl = ''
 
       for (const evt of gitPushEvents) {
         const c = evt.content
@@ -53,10 +90,30 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
         if (Array.isArray(c.changed_files)) {
           c.changed_files.forEach((f: string) => allFiles.add(f))
         }
+        // Parse changed_files_detail (new field)
+        if (Array.isArray(c.changed_files_detail)) {
+          for (const f of c.changed_files_detail as ChangedFileDetail[]) {
+            allFiles.add(f.path)
+            allFileDetails.set(f.path, f.status)
+          }
+        }
+        // Extract repo_url (use latest non-empty value)
+        if (c.repo_url && typeof c.repo_url === 'string') {
+          latestRepoUrl = c.repo_url
+        }
       }
 
       setCommits(commitList)
       setChangedFiles(Array.from(allFiles))
+      setFileDetails(allFileDetails)
+      setRepoUrl(latestRepoUrl)
+
+      // Pre-compute SHA256 hashes for all files (for PR diff anchors)
+      const hashes = new Map<string, string>()
+      for (const file of allFiles) {
+        hashes.set(file, await sha256(file))
+      }
+      setFileDiffHashes(hashes)
     } catch (error) {
       console.error('Failed to load git data:', error)
     } finally {
@@ -92,6 +149,31 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
     } finally {
       setMerging(false)
     }
+  }
+
+  // Build diff URL for a changed file
+  function buildFileDiffUrl(filePath: string): string | null {
+    const prUrl = flowRun?.prUrl
+    if (prUrl) {
+      // PR diff: {prUrl}/files#diff-{sha256(filePath)}
+      const hash = fileDiffHashes.get(filePath)
+      if (hash) {
+        return `${prUrl}/files#diff-${hash}`
+      }
+    }
+    // Fallback: commit page
+    if (repoUrl && commits.length > 0) {
+      return `${repoUrl}/commit/${commits[0].hash}`
+    }
+    return null
+  }
+
+  // Build commit URL
+  function buildCommitUrl(fullHash: string): string | null {
+    if (repoUrl) {
+      return `${repoUrl}/commit/${fullHash}`
+    }
+    return null
   }
 
   if (loading) {
@@ -210,12 +292,25 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
             <span className="text-xs text-muted-foreground">({commits.length})</span>
           </div>
           <div className="rounded-md border divide-y">
-            {commits.map((commit, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-2">
-                <code className="text-xs text-muted-foreground shrink-0">{commit.hash.slice(0, 7)}</code>
-                <span className="text-sm truncate">{commit.message}</span>
-              </div>
-            ))}
+            {commits.map((commit, i) => {
+              const commitUrl = buildCommitUrl(commit.hash)
+              return (
+                <div key={i} className="flex items-center gap-2 px-3 py-2">
+                  {commitUrl ? (
+                    <a
+                      href={commitUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <code className="text-xs text-blue-600 hover:underline shrink-0">{commit.hash.slice(0, 7)}</code>
+                    </a>
+                  ) : (
+                    <code className="text-xs text-muted-foreground shrink-0">{commit.hash.slice(0, 7)}</code>
+                  )}
+                  <span className="text-sm truncate">{commit.message}</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -238,11 +333,21 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
           </div>
           {filesExpanded && (
             <div className="rounded-md border divide-y max-h-48 overflow-auto">
-              {changedFiles.map((file, i) => (
-                <div key={i} className="px-3 py-1.5">
-                  <code className="text-xs text-muted-foreground">{file}</code>
-                </div>
-              ))}
+              {changedFiles.map((file, i) => {
+                const diffUrl = buildFileDiffUrl(file)
+                const status = fileDetails.get(file)
+                return (
+                  <div key={i} className="px-3 py-1.5 flex items-center gap-2">
+                    {status && <StatusBadge status={status} />}
+                    <code className="text-xs text-muted-foreground flex-1 truncate">{file}</code>
+                    {diffUrl && (
+                      <a href={diffUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                        <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-blue-500" />
+                      </a>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

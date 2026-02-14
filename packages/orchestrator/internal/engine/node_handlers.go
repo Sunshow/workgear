@@ -171,7 +171,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 
 	// 7. Update Git info on task (if agent performed git operations)
 	if resp.GitMetadata != nil && resp.GitMetadata.Branch != "" {
-		if err := e.updateTaskGitInfo(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, resp.GitMetadata); err != nil {
+		if err := e.updateTaskGitInfo(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, resp.GitMetadata, gitRepoURL); err != nil {
 			e.logger.Warnw("Failed to update git info", "error", err, "node_id", nodeRun.NodeID)
 			// Non-fatal: don't block flow execution
 		}
@@ -459,7 +459,7 @@ func extractArtifactContent(artifactType string, output map[string]any) string {
 }
 
 // updateTaskGitInfo updates the task's git branch and records git timeline events
-func (e *FlowExecutor) updateTaskGitInfo(ctx context.Context, taskID, flowRunID, nodeRunID string, git *agent.GitMetadata) error {
+func (e *FlowExecutor) updateTaskGitInfo(ctx context.Context, taskID, flowRunID, nodeRunID string, git *agent.GitMetadata, configRepoURL string) error {
 	// Update task git_branch
 	if err := e.db.UpdateTaskGitBranch(ctx, taskID, git.Branch); err != nil {
 		return fmt.Errorf("update task git branch: %w", err)
@@ -473,15 +473,38 @@ func (e *FlowExecutor) updateTaskGitInfo(ctx context.Context, taskID, flowRunID,
 		"changed_files", len(git.ChangedFiles),
 	)
 
+	// Resolve repo URL if not already set (fallback: parse from agent config repo URL)
+	if git.RepoURL == "" {
+		git.RepoURL = resolveRepoURL(configRepoURL)
+	}
+
+	// Build changed_files_detail from ChangedFiles if not already populated
+	if len(git.ChangedFilesDetail) == 0 && len(git.ChangedFiles) > 0 {
+		// Fallback: mark all files as "modified" when detail is unavailable
+		for _, f := range git.ChangedFiles {
+			git.ChangedFilesDetail = append(git.ChangedFilesDetail, agent.ChangedFileDetail{
+				Path:   f,
+				Status: "modified",
+			})
+		}
+	}
+
 	// Record git_pushed timeline event
-	e.recordTimeline(ctx, taskID, flowRunID, nodeRunID, "git_pushed", map[string]any{
-		"branch":        git.Branch,
-		"base_branch":   git.BaseBranch,
-		"commit":        git.Commit,
+	timelineContent := map[string]any{
+		"branch":         git.Branch,
+		"base_branch":    git.BaseBranch,
+		"commit":         git.Commit,
 		"commit_message": git.CommitMessage,
-		"changed_files": git.ChangedFiles,
-		"message":       fmt.Sprintf("代码已推送到分支 %s", git.Branch),
-	})
+		"changed_files":  git.ChangedFiles,
+		"message":        fmt.Sprintf("代码已推送到分支 %s", git.Branch),
+	}
+	if git.RepoURL != "" {
+		timelineContent["repo_url"] = git.RepoURL
+	}
+	if len(git.ChangedFilesDetail) > 0 {
+		timelineContent["changed_files_detail"] = git.ChangedFilesDetail
+	}
+	e.recordTimeline(ctx, taskID, flowRunID, nodeRunID, "git_pushed", timelineContent)
 
 	// Record pr_created timeline event (if PR was created)
 	if git.PrUrl != "" {
@@ -705,4 +728,80 @@ func sanitizeSlug(s string) string {
 	}
 	slug = strings.Trim(slug, "-")
 	return slug
+}
+
+// ─── Git Diff Viewer Link Helpers ───
+
+// resolveRepoURL extracts a clean HTTPS repo URL from a git remote URL.
+// Strips credentials, converts SSH format to HTTPS, removes .git suffix.
+func resolveRepoURL(remoteURL string) string {
+	if remoteURL == "" {
+		return ""
+	}
+
+	url := remoteURL
+
+	// Convert SSH format: git@github.com:owner/repo.git → https://github.com/owner/repo
+	if strings.HasPrefix(url, "git@") {
+		url = strings.TrimPrefix(url, "git@")
+		url = strings.Replace(url, ":", "/", 1)
+		url = "https://" + url
+	}
+
+	// Strip credentials from HTTPS URL: https://token@github.com/... → https://github.com/...
+	if strings.Contains(url, "@") && strings.HasPrefix(url, "https://") {
+		parts := strings.SplitN(url, "@", 2)
+		if len(parts) == 2 {
+			url = "https://" + parts[1]
+		}
+	}
+
+	// Remove trailing .git
+	url = strings.TrimSuffix(url, ".git")
+
+	return url
+}
+
+// parseChangedFilesDetail parses "git diff --name-status" output into ChangedFileDetail slice.
+// NOTE: Currently unused — entrypoint.sh parses git diff --name-status inside the container
+// and writes the result to git_metadata.json, which adapter.go deserializes directly.
+// Retained as a Go-side backup parser in case the shell-based parsing is removed in the future.
+func parseChangedFilesDetail(output string) []agent.ChangedFileDetail {
+	var details []agent.ChangedFileDetail
+	statusMap := map[string]string{
+		"A": "added",
+		"M": "modified",
+		"D": "deleted",
+		"R": "renamed",
+	}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		statusCode := parts[0]
+		filePath := parts[1]
+		// For renames (R100), use the destination path
+		if strings.HasPrefix(statusCode, "R") && len(parts) == 3 {
+			filePath = parts[2]
+			statusCode = "R"
+		}
+		// Map first character for cases like R100, C100
+		if len(statusCode) > 1 {
+			statusCode = statusCode[:1]
+		}
+		status := statusMap[statusCode]
+		if status == "" {
+			status = "modified"
+		}
+		details = append(details, agent.ChangedFileDetail{
+			Path:   filePath,
+			Status: status,
+		})
+	}
+	return details
 }
