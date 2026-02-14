@@ -325,7 +325,7 @@ func (c *Client) GetCompletedNodeIDs(ctx context.Context, flowRunID string) (map
 			SELECT DISTINCT ON (node_id) node_id, status
 			FROM node_runs
 			WHERE flow_run_id = $1
-			ORDER BY node_id, attempt DESC
+			ORDER BY node_id, attempt DESC, created_at DESC
 		) latest
 		WHERE status = 'completed'
 	`, flowRunID)
@@ -354,7 +354,7 @@ func (c *Client) GetPendingNodeRuns(ctx context.Context, flowRunID string) ([]*N
 			SELECT DISTINCT ON (node_id) id
 			FROM node_runs
 			WHERE flow_run_id = $1
-			ORDER BY node_id, attempt DESC
+			ORDER BY node_id, attempt DESC, created_at DESC
 		) latest ON nr.id = latest.id
 		WHERE nr.flow_run_id = $1 AND nr.status = 'pending'
 	`, flowRunID)
@@ -395,7 +395,7 @@ func (c *Client) AllNodesCompleted(ctx context.Context, flowRunID string) (bool,
 			SELECT DISTINCT ON (node_id) status
 			FROM node_runs
 			WHERE flow_run_id = $1
-			ORDER BY node_id, attempt DESC
+			ORDER BY node_id, attempt DESC, created_at DESC
 		) latest
 		WHERE status != 'completed'
 	`, flowRunID).Scan(&count)
@@ -494,7 +494,7 @@ func (c *Client) GetAllNodeRunOutputs(ctx context.Context, flowRunID string) (ma
 		SELECT DISTINCT ON (node_id) node_id, output
 		FROM node_runs
 		WHERE flow_run_id = $1 AND status = 'completed' AND output IS NOT NULL
-		ORDER BY node_id, attempt DESC
+		ORDER BY node_id, attempt DESC, created_at DESC
 	`, flowRunID)
 	if err != nil {
 		return nil, fmt.Errorf("get all node run outputs: %w", err)

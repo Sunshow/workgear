@@ -596,7 +596,7 @@ func (e *FlowExecutor) resetIntermediateNodes(ctx context.Context, flowRun *db.F
 func (e *FlowExecutor) walkAndReset(ctx context.Context, flowRun *db.FlowRun, dag *DAG, fromNodeID, untilNodeID string, visited map[string]bool) {
 	successors := dag.GetSuccessors(fromNodeID)
 	for _, succID := range successors {
-		if succID == untilNodeID || visited[succID] {
+		if visited[succID] {
 			continue
 		}
 		visited[succID] = true
@@ -606,7 +606,14 @@ func (e *FlowExecutor) walkAndReset(ctx context.Context, flowRun *db.FlowRun, da
 			continue
 		}
 
-		// Create a new PENDING node run for this intermediate node
+		// Query existing max attempt to increment properly
+		existing, _ := e.db.GetNodeRunByFlowAndNode(ctx, flowRun.ID, succID)
+		attempt := 1
+		if existing != nil {
+			attempt = existing.Attempt + 1
+		}
+
+		// Create a new PENDING node run for this node (including the rejected node itself)
 		nr := &db.NodeRun{
 			ID:        uuid.New().String(),
 			FlowRunID: flowRun.ID,
@@ -614,7 +621,7 @@ func (e *FlowExecutor) walkAndReset(ctx context.Context, flowRun *db.FlowRun, da
 			NodeType:  strPtr(succDef.Type),
 			NodeName:  strPtr(succDef.Name),
 			Status:    db.StatusPending,
-			Attempt:   1,
+			Attempt:   attempt,
 			CreatedAt: time.Now(),
 		}
 
@@ -622,7 +629,10 @@ func (e *FlowExecutor) walkAndReset(ctx context.Context, flowRun *db.FlowRun, da
 			e.logger.Warnw("Failed to create intermediate node run", "node_id", succID, "error", err)
 		}
 
-		e.walkAndReset(ctx, flowRun, dag, succID, untilNodeID, visited)
+		// Don't recurse past the rejected node — only reset nodes between target and current
+		if succID != untilNodeID {
+			e.walkAndReset(ctx, flowRun, dag, succID, untilNodeID, visited)
+		}
 	}
 }
 

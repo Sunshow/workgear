@@ -44,6 +44,25 @@ WorkGear 是一个 AI Agent 工作流编排平台，支持 ClaudeCode 等 Agent 
 - 前端所有 API 调用走 `/api` 前缀，Vite 自动代理到 API Server
 - 不要在前端直接连数据库或 gRPC
 
+### 开发环境数据库连接
+
+PostgreSQL 运行在 Docker 容器中（配置见 `docker/docker-compose.yml`）：
+
+| 参数 | 值 |
+|------|-----|
+| 容器名 | `workgear-postgres` |
+| 数据库 | `workgear_dev` |
+| 用户名 | `workgear` |
+| 密码 | `workgear_dev_pass` |
+| 端口 | `5432`（已映射到宿主机） |
+
+通过 Docker 执行 SQL：
+```bash
+docker exec -i workgear-postgres psql -U workgear -d workgear_dev -c "SELECT 1;"
+```
+
+注意：宿主机未安装 psql，必须通过 `docker exec` 进入容器执行。
+
 ---
 
 ## 项目结构
