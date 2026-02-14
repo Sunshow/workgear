@@ -75,6 +75,6 @@
 
 ## 模块：OpenSpec 文档
 
-- [ ] 归档完成后更新 `openspec/specs/kanban/2026-02-14-kanban-board.md` **[S]**
-- [ ] 归档完成后更新 `openspec/specs/artifact/2026-02-14-artifact-management.md` **[S]**
-- [ ] 归档完成后更新 `openspec/specs/api/2026-02-14-rest-api.md` **[S]**
+- [x] 归档完成后更新 `openspec/specs/kanban/2026-02-14-kanban-board.md` **[S]**
+- [x] 归档完成后更新 `openspec/specs/artifact/2026-02-14-artifact-management.md` **[S]**
+- [x] 归档完成后更新 `openspec/specs/api/2026-02-14-rest-api.md` **[S]**

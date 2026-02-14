@@ -1,156 +1,87 @@
-# Artifact Management
+# Delta Spec: Orchestrator Git 事件数据增强
 
-> Source of Truth — 描述产物管理模块的行为规范
+> **Type:** MODIFIED
+> **Module:** artifact
+> **Date:** 2026-02-14
+> **Change:** git-diff-viewer-link
 
-## Scenario: List Artifacts by Task
+## 概述
 
-### Given
-- User is authenticated
-- Task exists with taskId
-
-### When
-- GET /api/artifacts?taskId={taskId}
-
-### Then
-- Query returns all artifacts where artifact.taskId = taskId
-- Artifacts are ordered by createdAt (descending, newest first)
-- Response: 200 with array of artifacts
-- Each artifact: `{ id, taskId, type, title, createdAt }`
+修改产物管理模块中与 Git 产物相关的行为规范，补充 Orchestrator 推送 git 事件时携带仓库 URL 和文件变更类型的规范。
 
 ---
 
-## Scenario: List Artifacts without TaskId
+## 场景
 
-### Given
-- User is authenticated
-- No taskId is provided in query
+### Scenario 1: Agent 执行 git 操作后推送增强事件
 
-### When
-- GET /api/artifacts
+```gherkin
+Given Agent 在容器中执行了 git commit 和 git push 操作
+  And Agent adapter 解析了 git 操作的输出
+When Orchestrator 构建 git_pushed timeline 事件
+Then 事件 content 中包含 repo_url（从 Agent 配置或 git remote 解析）
+  And 事件 content 中包含 changed_files_detail 数组
+  And changed_files_detail 通过 git diff --name-status 获取文件变更类型
+```
 
-### Then
-- Response: 422 Unprocessable Entity with `{ error: 'taskId is required' }`
+### Scenario 2: 从 git diff 输出解析文件变更类型
 
----
+```gherkin
+Given Agent 执行了 git diff --name-status HEAD~1 命令
+  And 输出格式为 "<status>\t<filepath>" 每行一个文件
+When Orchestrator 解析 diff 输出
+Then 将 git status 字母映射为标准类型：
+  | git status | mapped status |
+  | A          | added         |
+  | M          | modified      |
+  | D          | deleted       |
+  | R          | renamed       |
+  And 未识别的 status 默认映射为 modified
+```
 
-## Scenario: Get Artifact Details
+### Scenario 3: 从 git remote 解析仓库 URL
 
-### Given
-- User is authenticated
-- Artifact exists with id
+```gherkin
+Given Agent 容器中的 git 仓库配置了 remote origin
+  And remote URL 可能是 HTTPS 或 SSH 格式
+When Orchestrator 解析 repo_url
+Then SSH 格式 (git@github.com:owner/repo.git) 转换为 HTTPS (https://github.com/owner/repo)
+  And HTTPS 格式保持不变，去除末尾 .git 后缀
+  And 解析失败时 repo_url 为空字符串，不阻塞事件推送
+```
 
-### When
-- GET /api/artifacts/:id
+### Scenario 4: Agent 配置中预设仓库 URL
 
-### Then
-- Artifact is fetched from database
-- If not found → 404 with `{ error: 'Artifact not found' }`
-- Response: 200 with artifact object `{ id, taskId, type, title, createdAt }`
-
----
-
-## Scenario: Get Artifact Version History
-
-### Given
-- User is authenticated
-- Artifact exists with id
-
-### When
-- GET /api/artifacts/:id/versions
-
-### Then
-- Query returns all artifact_versions where artifactId = id
-- Versions are ordered by version number (descending, newest first)
-- Response: 200 with array of versions
-- Each version: `{ id, artifactId, version, content, changeSummary, createdBy, createdAt }`
-
----
-
-## Scenario: Get Artifact Links (Relationships)
-
-### Given
-- User is authenticated
-- Artifact exists with id
-
-### When
-- GET /api/artifacts/:id/links
-
-### Then
-- Query returns all artifact_links where sourceId = id
-- Response: 200 with array of links
-- Each link: `{ id, sourceId, targetId, linkType, createdAt }`
-- linkType represents DAG relationships: 'derives_from', 'implements', 'verifies', etc.
+```gherkin
+Given 项目的 Agent 配置中包含 repoUrl 字段
+When Orchestrator 构建 git_pushed 事件
+Then 优先使用 Agent 配置中的 repoUrl
+  And 如果配置中无 repoUrl，则从 git remote 解析
+  And 如果都无法获取，repo_url 字段为空字符串
+```
 
 ---
 
-## Scenario: Artifact Types
+## 数据结构
 
-### Given
-- Artifacts are created by workflow nodes or manual upload
+### ChangedFileDetail（Go 结构体扩展）
 
-### When
-- Artifact type is specified
+```go
+type ChangedFileDetail struct {
+    Path   string `json:"path"`
+    Status string `json:"status"` // "added", "modified", "deleted", "renamed"
+}
+```
 
-### Then
-- Supported types include:
-  - 'prd' (Product Requirements Document)
-  - 'spec' (Technical Specification)
-  - 'test-plan' (Test Plan)
-  - 'code' (Source Code)
-  - 'review-report' (Code Review Report)
-  - Other custom types as needed
-- Type is stored as varchar(50) in artifacts.type
+### GitMetadata（扩展后）
 
----
-
-## Scenario: Artifact Versioning
-
-### Given
-- Artifact exists
-- New version is created
-
-### When
-- Version is stored in artifact_versions table
-
-### Then
-- Version number is incremented (integer)
-- Unique constraint enforced on (artifactId, version)
-- Each version stores: content (text), changeSummary, createdBy
-- Quality scores can be stored in future (schema supports extension)
-
----
-
-## Scenario: Artifact DAG Relationships
-
-### Given
-- Multiple artifacts exist in a task workflow
-
-### When
-- Artifacts are linked via artifact_links table
-
-### Then
-- Links form a Directed Acyclic Graph (DAG)
-- Example relationships:
-  - Spec 'derives_from' PRD
-  - Code 'implements' Spec
-  - Test Plan 'verifies' Code
-  - Review Report 'reviews' Code
-- Links enable traceability across development lifecycle
-
----
-
-## Scenario: Frontend Artifacts Tab
-
-### Given
-- User opens TaskDetail panel
-- Task has associated artifacts
-
-### When
-- User clicks Artifacts tab
-
-### Then
-- ArtifactsTab component fetches GET /api/artifacts?taskId={taskId}
-- Artifacts are displayed with type badges and titles
-- Clicking artifact shows version history via GET /api/artifacts/:id/versions
-- Artifact links/relationships can be viewed via GET /api/artifacts/:id/links
-- SpecArtifactViewer component renders markdown/code content
+```go
+type GitMetadata struct {
+    Commit             string              `json:"commit"`
+    CommitMessage      string              `json:"commit_message"`
+    Branch             string              `json:"branch"`
+    ChangedFiles       []string            `json:"changed_files"`
+    RepoURL            string              `json:"repo_url"`
+    ChangedFilesDetail []ChangedFileDetail `json:"changed_files_detail"`
+}
+```
