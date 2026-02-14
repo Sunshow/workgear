@@ -276,3 +276,69 @@
 - 更新 tasks.column_id 为目标列 ID
 - 更新 tasks.updated_at 为当前时间
 - 如果子查询未找到匹配列，UPDATE 影响 0 行（静默无操作）
+
+---
+
+## Scenario: 自动合并成功后记录 merge commit SHA
+
+### Given
+- FlowRun 状态为 COMPLETED
+- FlowRun 关联的 PR 存在（prNumber 不为空）
+- 项目配置 autoMergePr = true
+
+### When
+- handleFlowCompletedAutoMerge 调用 GitHub Merge API 成功
+- mergeResult.merged = true
+- mergeResult.sha 包含 merge commit 的完整 SHA
+
+### Then
+- flow_runs.merge_commit_sha 更新为 mergeResult.sha
+- flow_runs.pr_merged_at 更新为当前时间
+- 两个字段在同一次 UPDATE 中写入
+
+---
+
+## Scenario: 手动合并成功后记录 merge commit SHA
+
+### Given
+- 用户调用 PUT /flow-runs/:id/merge-pr
+- FlowRun 关联的 PR 存在且未合并
+
+### When
+- GitHub Merge API 返回成功
+- mergeResult.sha 包含 merge commit 的完整 SHA
+
+### Then
+- flow_runs.merge_commit_sha 更新为 mergeResult.sha
+- flow_runs.pr_merged_at 更新为当前时间
+- 返回 { merged: true, mergeCommitSha: mergeResult.sha }
+
+---
+
+## Scenario: 合并失败时不记录 merge commit SHA
+
+### Given
+- FlowRun 关联的 PR 存在
+
+### When
+- GitHub Merge API 返回失败（mergeResult.merged = false）
+
+### Then
+- flow_runs.merge_commit_sha 保持为 NULL
+- flow_runs.pr_merged_at 保持为 NULL
+- 记录 pr_merge_failed timeline 事件
+
+---
+
+## Scenario: 历史已合并 PR 的 merge_commit_sha 为 NULL
+
+### Given
+- 在此功能上线前已合并的 FlowRun
+- flow_runs.pr_merged_at 已有值
+
+### When
+- 前端查询 FlowRun 数据
+
+### Then
+- flow_runs.merge_commit_sha 为 NULL
+- 前端优雅降级，不显示 merge commit 链接

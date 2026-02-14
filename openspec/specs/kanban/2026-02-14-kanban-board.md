@@ -100,3 +100,108 @@ Then 文件名和 commit hash 显示为纯文本（与当前行为一致）
 |------|-----|
 | Hash 链接 | `<a target="_blank"><code className="text-xs text-blue-600 hover:underline">` |
 | 无 URL 时 | `<code className="text-xs text-muted-foreground">` 纯文本 |
+
+---
+
+## Scenario: PR 已合并时显示 merge commit 短 hash
+
+### Given
+- FlowRun 的 PR 已合并（prMergedAt 不为空）
+- FlowRun.mergeCommitSha 存在（如 "abc123def456..."）
+- repoUrl 可用（来自 git_pushed 事件或项目配置）
+
+### When
+- 用户查看 Git Tab 的 PR 区域
+
+### Then
+- 合并时间戳下方显示 merge commit 短 hash（前 7 位）
+- 短 hash 显示为可点击链接
+- 链接指向 {repoUrl}/commit/{mergeCommitSha}
+- 点击在新标签页打开 GitHub merge commit 详情页
+
+---
+
+## Scenario: PR 已合并但无 mergeCommitSha 时优雅降级
+
+### Given
+- FlowRun 的 PR 已合并（prMergedAt 不为空）
+- FlowRun.mergeCommitSha 为 null（历史数据）
+
+### When
+- 用户查看 Git Tab 的 PR 区域
+
+### Then
+- 仅显示合并时间戳（与当前行为一致）
+- 不显示 merge commit hash 和链接
+
+---
+
+## Scenario: PR 已合并但无 repoUrl 时显示纯文本 hash
+
+### Given
+- FlowRun 的 PR 已合并
+- FlowRun.mergeCommitSha 存在
+- repoUrl 不可用（无 git_pushed 事件或事件中无 repo_url）
+
+### When
+- 用户查看 Git Tab 的 PR 区域
+
+### Then
+- merge commit 短 hash 显示为纯文本（不可点击）
+- 使用 text-muted-foreground 样式
+
+---
+
+## Scenario: 提交记录列表追加 merge commit
+
+### Given
+- FlowRun 的 PR 已合并
+- FlowRun.mergeCommitSha 存在
+- 提交记录列表已包含 feature branch 的 commits
+
+### When
+- Git Tab 渲染提交记录列表
+
+### Then
+- 列表末尾追加一条 merge commit 条目
+- 条目显示 merge commit 短 hash（前 7 位）
+- 条目 message 显示为 "Merge PR #{prNumber}"
+- 条目带有 GitMerge 图标以区分普通 commit
+- 短 hash 可点击跳转到 {repoUrl}/commit/{mergeCommitSha}
+
+---
+
+## Scenario: PR 未合并时不显示 merge commit
+
+### Given
+- FlowRun 的 PR 未合并（prMergedAt 为空）
+
+### When
+- 用户查看 Git Tab
+
+### Then
+- PR 区域不显示 merge commit 信息
+- 提交记录列表不包含 merge commit 条目
+
+---
+
+## UI 规格 — Merge Commit
+
+### PR 区域 — Merge Commit 行
+
+| 属性 | 值 |
+|------|-----|
+| 位置 | 合并时间戳下方 |
+| 布局 | `flex items-center gap-1.5` |
+| 图标 | `<GitCommit className="h-3 w-3 text-muted-foreground" />` |
+| 有链接时 | `<a target="_blank"><code className="text-xs text-blue-600 hover:underline">{sha.slice(0,7)}</code></a>` |
+| 无链接时 | `<code className="text-xs text-muted-foreground">{sha.slice(0,7)}</code>` |
+
+### 提交记录 — Merge Commit 条目
+
+| 属性 | 值 |
+|------|-----|
+| 图标 | `<GitMerge className="h-3 w-3 text-purple-500" />` 替代默认无图标 |
+| Hash | 与普通 commit 相同样式（可点击蓝色 / 纯文本灰色） |
+| Message | `Merge PR #${prNumber}` |
+| 分隔 | 与普通 commits 之间有视觉分隔（如 border-t-2 或 bg-muted/20） |

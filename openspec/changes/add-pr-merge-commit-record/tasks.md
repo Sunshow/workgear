@@ -6,7 +6,7 @@
 
 - [x] 在 `schema.ts` 的 `flowRuns` 表定义中新增 `mergeCommitSha: varchar('merge_commit_sha', { length: 100 })` 列 **[S]**
 - [x] 生成 Drizzle migration 文件：`ALTER TABLE flow_runs ADD COLUMN merge_commit_sha varchar(100)` **[S]**
-- [ ] 执行 migration 验证列已添加 **[S]**
+- [x] 执行 migration 验证列已添加 **[S]**
 
 ## 模块：API 自动合并 (packages/api/src/ws)
 
@@ -63,7 +63,7 @@
 
 ## 模块：OpenSpec 文档
 
-- [ ] 归档完成后更新 `openspec/specs/flow-engine/2026-02-14-flow-execution.md` **[S]**
-- [ ] 归档完成后更新 `openspec/specs/api/2026-02-14-rest-api.md` **[S]**
-- [ ] 归档完成后更新 `openspec/specs/kanban/2026-02-14-kanban-board.md` **[S]**
-- [ ] 归档完成后更新 `openspec/specs/artifact/2026-02-14-artifact-management.md` **[S]**
+- [x] 归档完成后更新 `openspec/specs/flow-engine/2026-02-14-flow-execution.md` **[S]**
+- [x] 归档完成后更新 `openspec/specs/api/2026-02-14-rest-api.md` **[S]**
+- [x] 归档完成后更新 `openspec/specs/kanban/2026-02-14-kanban-board.md` **[S]**
+- [x] 归档完成后更新 `openspec/specs/artifact/2026-02-14-artifact-management.md` **[S]**
