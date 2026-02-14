@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { eq, desc } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { flowRuns, nodeRuns, tasks, workflows, timelineEvents } from '../db/schema.js'
+import { flowRuns, nodeRuns, tasks, workflows, timelineEvents, projects } from '../db/schema.js'
 import { parse } from 'yaml'
 import * as orchestrator from '../grpc/client.js'
 import { authenticate } from '../middleware/auth.js'
+import { GitHubProvider } from '../lib/github-provider.js'
 
 export async function flowRunRoutes(app: FastifyInstance) {
   // 所有流程执行路由都需要登录
@@ -157,5 +158,80 @@ export async function flowRunRoutes(app: FastifyInstance) {
     // 重新查询更新后的状态
     const [updated] = await db.select().from(flowRuns).where(eq(flowRuns.id, id))
     return updated
+  })
+
+  // 手动 Merge PR
+  app.put<{ Params: { id: string } }>('/:id/merge-pr', async (request, reply) => {
+    const { id } = request.params
+
+    const [flowRun] = await db.select().from(flowRuns).where(eq(flowRuns.id, id))
+    if (!flowRun) {
+      return reply.status(404).send({ error: 'FlowRun not found' })
+    }
+    if (!flowRun.prNumber) {
+      return reply.status(422).send({ error: 'No PR associated with this flow run' })
+    }
+    if (flowRun.prMergedAt) {
+      return reply.status(422).send({ error: 'PR already merged' })
+    }
+
+    // 查询 task → project
+    const [task] = await db.select().from(tasks).where(eq(tasks.id, flowRun.taskId))
+    if (!task) {
+      return reply.status(404).send({ error: 'Task not found' })
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, task.projectId))
+    if (!project?.gitAccessToken || !project.gitRepoUrl) {
+      return reply.status(422).send({ error: 'Project missing Git configuration' })
+    }
+
+    const provider = new GitHubProvider(project.gitAccessToken)
+    const repoInfo = provider.parseRepoUrl(project.gitRepoUrl)
+    if (!repoInfo) {
+      return reply.status(422).send({ error: 'Cannot parse repo URL' })
+    }
+
+    const mergeResult = await provider.mergePullRequest({
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      pullNumber: flowRun.prNumber,
+      mergeMethod: 'squash',
+      commitTitle: task.title,
+    })
+
+    if (mergeResult.merged) {
+      await db.update(flowRuns).set({ prMergedAt: new Date() }).where(eq(flowRuns.id, id))
+
+      await db.insert(timelineEvents).values({
+        taskId: task.id,
+        flowRunId: id,
+        eventType: 'pr_merged',
+        content: {
+          prUrl: flowRun.prUrl,
+          message: 'PR 已手动合并',
+        },
+      })
+
+      // 删除 feature branch
+      if (flowRun.branchName) {
+        await provider.deleteBranch(repoInfo.owner, repoInfo.repo, flowRun.branchName).catch(() => {})
+      }
+
+      return { merged: true }
+    } else {
+      await db.insert(timelineEvents).values({
+        taskId: task.id,
+        flowRunId: id,
+        eventType: 'pr_merge_failed',
+        content: {
+          prUrl: flowRun.prUrl,
+          error: mergeResult.message,
+          message: `PR 合并失败: ${mergeResult.message}`,
+        },
+      })
+
+      return reply.status(422).send({ error: mergeResult.message || 'Merge failed' })
+    }
   })
 }

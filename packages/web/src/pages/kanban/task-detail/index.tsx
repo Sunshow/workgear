@@ -134,7 +134,7 @@ export function TaskDetail({ task, open, onOpenChange, onDeleted }: TaskDetailPr
               <ArtifactsTab taskId={task.id} />
             </TabsContent>
             <TabsContent value="git">
-              <GitTab gitBranch={task.gitBranch} />
+              <GitTab taskId={task.id} gitBranch={task.gitBranch} />
             </TabsContent>
           </Tabs>
         </div>

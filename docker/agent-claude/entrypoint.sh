@@ -130,13 +130,26 @@ create_github_pr() {
     local BODY=$(echo "$RESPONSE" | sed '$d')
 
     if [ "$HTTP_CODE" = "201" ]; then
-        local PR_URL=$(echo "$BODY" | grep -o '"html_url":"[^"]*"' | head -1 | cut -d'"' -f4)
-        local PR_NUMBER=$(echo "$BODY" | grep -o '"number":[0-9]*' | head -1 | cut -d':' -f2)
+        local PR_URL=$(echo "$BODY" | jq -r '.html_url')
+        local PR_NUMBER=$(echo "$BODY" | jq -r '.number')
         echo "[agent] PR created successfully: $PR_URL (#$PR_NUMBER)"
         echo "$PR_URL" > /output/pr_url.txt
         echo "$PR_NUMBER" > /output/pr_number.txt
     elif [ "$HTTP_CODE" = "422" ]; then
-        echo "[agent] PR already exists (422), continuing..."
+        echo "[agent] PR already exists (422), looking up existing PR..."
+        # Look up existing PR to extract pr_url and pr_number
+        local SEARCH_URL="https://api.github.com/repos/$OWNER/$REPO/pulls?head=$OWNER:$FEATURE_BRANCH&base=$BASE_BRANCH&state=open"
+        local SEARCH_RESP=$(curl -s "$SEARCH_URL" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28")
+        local EXISTING_PR_URL=$(echo "$SEARCH_RESP" | jq -r '.[0].html_url // empty')
+        local EXISTING_PR_NUMBER=$(echo "$SEARCH_RESP" | jq -r '.[0].number // empty')
+        if [ -n "$EXISTING_PR_URL" ]; then
+            echo "[agent] Found existing PR: $EXISTING_PR_URL (#$EXISTING_PR_NUMBER)"
+            echo "$EXISTING_PR_URL" > /output/pr_url.txt
+            echo "$EXISTING_PR_NUMBER" > /output/pr_number.txt
+        fi
     else
         echo "[agent] Warning: Failed to create PR (HTTP $HTTP_CODE), but branch was pushed successfully"
         echo "[agent] Response: $BODY"

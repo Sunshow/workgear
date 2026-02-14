@@ -142,6 +142,10 @@ export interface FlowRun {
   error: string | null
   dslSnapshot: string | null
   variables: Record<string, any> | null
+  branchName: string | null
+  prUrl: string | null
+  prNumber: number | null
+  prMergedAt: string | null
   startedAt: string | null
   completedAt: string | null
   createdAt: string
