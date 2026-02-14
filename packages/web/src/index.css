@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@import "highlight.js/styles/github.css";
 
 @theme inline {
   --color-background: hsl(var(--background));

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FileText, Edit, Save, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
+import { MarkdownRenderer } from '@/components/markdown-renderer'
 
 interface Artifact {
   path: string
@@ -278,8 +279,8 @@ function ArtifactContent({
           disabled={saving}
         />
       ) : (
-        <div className="rounded-md border bg-gray-50 p-4">
-          <pre className="whitespace-pre-wrap text-sm">{artifact.content}</pre>
+        <div className="rounded-md border bg-background p-4 max-h-[600px] overflow-y-auto">
+          <MarkdownRenderer content={artifact.content} />
         </div>
       )}
     </div>

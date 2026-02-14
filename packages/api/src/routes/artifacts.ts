@@ -61,4 +61,23 @@ export async function artifactRoutes(app: FastifyInstance) {
 
     return result
   })
+
+  // 获取产物版本内容
+  app.get<{ Params: { id: string; versionId: string } }>(
+    '/:id/versions/:versionId/content',
+    async (request, reply) => {
+      const { versionId } = request.params
+
+      const [version] = await db
+        .select({ content: artifactVersions.content })
+        .from(artifactVersions)
+        .where(eq(artifactVersions.id, versionId))
+
+      if (!version) {
+        return reply.status(404).send({ error: 'Version not found' })
+      }
+
+      return { content: version.content || '' }
+    }
+  )
 }
