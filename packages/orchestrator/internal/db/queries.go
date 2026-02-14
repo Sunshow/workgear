@@ -318,11 +318,16 @@ func (c *Client) UpdateNodeRunStatusByFlowAndNode(ctx context.Context, flowRunID
 	return err
 }
 
-// GetCompletedNodeIDs returns all completed node IDs for a flow run
+// GetCompletedNodeIDs returns node IDs whose latest attempt is completed
 func (c *Client) GetCompletedNodeIDs(ctx context.Context, flowRunID string) (map[string]bool, error) {
 	rows, err := c.pool.Query(ctx, `
-		SELECT node_id FROM node_runs
-		WHERE flow_run_id = $1 AND status = 'completed'
+		SELECT node_id FROM (
+			SELECT DISTINCT ON (node_id) node_id, status
+			FROM node_runs
+			WHERE flow_run_id = $1
+			ORDER BY node_id, attempt DESC
+		) latest
+		WHERE status = 'completed'
 	`, flowRunID)
 	if err != nil {
 		return nil, err
@@ -340,12 +345,18 @@ func (c *Client) GetCompletedNodeIDs(ctx context.Context, flowRunID string) (map
 	return result, nil
 }
 
-// GetPendingNodeRuns returns all PENDING node runs for a flow run
+// GetPendingNodeRuns returns pending node runs (only latest attempt per node)
 func (c *Client) GetPendingNodeRuns(ctx context.Context, flowRunID string) ([]*NodeRun, error) {
 	rows, err := c.pool.Query(ctx, `
-		SELECT id, flow_run_id, node_id, node_type, node_name, status, attempt
-		FROM node_runs
-		WHERE flow_run_id = $1 AND status = 'pending'
+		SELECT nr.id, nr.flow_run_id, nr.node_id, nr.node_type, nr.node_name, nr.status, nr.attempt
+		FROM node_runs nr
+		INNER JOIN (
+			SELECT DISTINCT ON (node_id) id
+			FROM node_runs
+			WHERE flow_run_id = $1
+			ORDER BY node_id, attempt DESC
+		) latest ON nr.id = latest.id
+		WHERE nr.flow_run_id = $1 AND nr.status = 'pending'
 	`, flowRunID)
 	if err != nil {
 		return nil, err
@@ -376,12 +387,17 @@ func (c *Client) AllNodesTerminal(ctx context.Context, flowRunID string) (bool, 
 	return count == 0, nil
 }
 
-// AllNodesCompleted checks if all node runs for a flow are completed
+// AllNodesCompleted checks if the latest attempt of every node in a flow is completed
 func (c *Client) AllNodesCompleted(ctx context.Context, flowRunID string) (bool, error) {
 	var count int
 	err := c.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM node_runs
-		WHERE flow_run_id = $1 AND status != 'completed'
+		SELECT COUNT(*) FROM (
+			SELECT DISTINCT ON (node_id) status
+			FROM node_runs
+			WHERE flow_run_id = $1
+			ORDER BY node_id, attempt DESC
+		) latest
+		WHERE status != 'completed'
 	`, flowRunID).Scan(&count)
 	if err != nil {
 		return false, err
