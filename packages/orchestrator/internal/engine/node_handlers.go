@@ -178,7 +178,16 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
-	// 6. Handle artifact creation (if configured)
+	// 6. Update Git info on task (if agent performed git operations)
+	// Must run before artifact creation so fetchFileFromGit can read the branch from DB
+	if resp.GitMetadata != nil && resp.GitMetadata.Branch != "" {
+		if err := e.updateTaskGitInfo(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, resp.GitMetadata, gitRepoURL); err != nil {
+			e.logger.Warnw("Failed to update git info", "error", err, "node_id", nodeRun.NodeID)
+			// Non-fatal: don't block flow execution
+		}
+	}
+
+	// 6b. Handle artifact creation (if configured)
 	if nodeDef.Config != nil && nodeDef.Config.Artifact != nil {
 		if err := e.handleArtifact(ctx, flowRun, nodeRun, nodeDef, runtimeCtx, resp.Output); err != nil {
 			e.logger.Warnw("Failed to create artifact", "error", err, "node_id", nodeRun.NodeID)
@@ -186,7 +195,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
-	// 6b. Extract markdown artifacts from Git changed files
+	// 6c. Extract markdown artifacts from Git changed files
 	if resp.GitMetadata != nil && len(resp.GitMetadata.ChangedFiles) > 0 {
 		artifactFiles := extractMarkdownArtifacts(resp.GitMetadata.ChangedFiles)
 		if len(artifactFiles) > 0 {
@@ -197,15 +206,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
-	// 7. Update Git info on task (if agent performed git operations)
-	if resp.GitMetadata != nil && resp.GitMetadata.Branch != "" {
-		if err := e.updateTaskGitInfo(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, resp.GitMetadata, gitRepoURL); err != nil {
-			e.logger.Warnw("Failed to update git info", "error", err, "node_id", nodeRun.NodeID)
-			// Non-fatal: don't block flow execution
-		}
-	}
-
-	// 8. Save output and mark completed
+	// 7. Save output and mark completed
 	if err := e.db.UpdateNodeRunOutput(ctx, nodeRun.ID, resp.Output); err != nil {
 		return fmt.Errorf("save output: %w", err)
 	}
@@ -213,12 +214,12 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		return fmt.Errorf("update status: %w", err)
 	}
 
-	// 9. Publish completion event
+	// 8. Publish completion event
 	e.publishEvent(nodeRun.FlowRunID, nodeRun.ID, nodeRun.NodeID, "node.completed", map[string]any{
 		"output": resp.Output,
 	})
 
-	// 10. Record timeline event
+	// 9. Record timeline event
 	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, "agent_completed", map[string]any{
 		"node_id":   nodeRun.NodeID,
 		"node_name": ptrStr(nodeRun.NodeName),
