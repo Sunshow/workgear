@@ -8,6 +8,7 @@ export const projects = pgTable('projects', {
   name: varchar('name', { length: 200 }).notNull(),
   description: text('description'),
   gitRepoUrl: varchar('git_repo_url', { length: 500 }),
+  gitAccessToken: varchar('git_access_token', { length: 500 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })

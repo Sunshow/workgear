@@ -4,6 +4,7 @@ export interface Project {
   name: string
   description: string | null
   gitRepoUrl: string | null
+  gitAccessToken: string | null
   createdAt: string
   updatedAt: string
 }
@@ -12,6 +13,7 @@ export interface CreateProjectDto {
   name: string
   description?: string
   gitRepoUrl?: string
+  gitAccessToken?: string
 }
 
 // Board types

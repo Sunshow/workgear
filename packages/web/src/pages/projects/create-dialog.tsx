@@ -77,6 +77,18 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
                 {...register('gitRepoUrl')}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="gitAccessToken">Git Access Token</Label>
+              <Input
+                id="gitAccessToken"
+                type="password"
+                placeholder="ghp_xxxx 或 glpat-xxxx"
+                {...register('gitAccessToken')}
+              />
+              <p className="text-xs text-muted-foreground">
+                用于 Agent 自动提交代码，需要仓库写权限
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

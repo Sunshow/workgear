@@ -22,9 +22,10 @@ export async function openspecRoutes(app: FastifyInstance) {
     const project = await getProject(projectId)
     if (!project) return reply.status(404).send({ error: 'Project not found' })
     if (!project.gitRepoUrl) return reply.status(400).send({ error: 'Project has no Git repo configured' })
+    const repoUrl = getAuthenticatedRepoUrl(project)!
 
     const basePath = `openspec/changes/${changeName}`
-    const files = await listGitFiles(project.gitRepoUrl, branch, basePath)
+    const files = await listGitFiles(repoUrl, branch, basePath)
 
     if (files.length === 0) {
       return reply.status(404).send({ error: `No OpenSpec change found: ${changeName}` })
@@ -33,7 +34,7 @@ export async function openspecRoutes(app: FastifyInstance) {
     // Fetch content for each file
     const artifacts = await Promise.all(
       files.map(async (filePath) => {
-        const content = await getGitFileContent(project.gitRepoUrl!, branch, filePath)
+        const content = await getGitFileContent(repoUrl, branch, filePath)
         return {
           path: filePath,
           relativePath: filePath.replace(`${basePath}/`, ''),
@@ -56,13 +57,14 @@ export async function openspecRoutes(app: FastifyInstance) {
     const project = await getProject(projectId)
     if (!project) return reply.status(404).send({ error: 'Project not found' })
     if (!project.gitRepoUrl) return reply.status(400).send({ error: 'Project has no Git repo configured' })
+    const repoUrl = getAuthenticatedRepoUrl(project)!
 
     const basePath = 'openspec/specs'
-    const files = await listGitFiles(project.gitRepoUrl, branch, basePath)
+    const files = await listGitFiles(repoUrl, branch, basePath)
 
     const specs = await Promise.all(
       files.map(async (filePath) => {
-        const content = await getGitFileContent(project.gitRepoUrl!, branch, filePath)
+        const content = await getGitFileContent(repoUrl, branch, filePath)
         return {
           path: filePath,
           relativePath: filePath.replace(`${basePath}/`, ''),
@@ -86,9 +88,10 @@ export async function openspecRoutes(app: FastifyInstance) {
     const project = await getProject(projectId)
     if (!project) return reply.status(404).send({ error: 'Project not found' })
     if (!project.gitRepoUrl) return reply.status(400).send({ error: 'Project has no Git repo configured' })
+    const repoUrl = getAuthenticatedRepoUrl(project)!
 
     const fullPath = `openspec/changes/${changeName}/${artifactPath}`
-    const content = await getGitFileContent(project.gitRepoUrl, branch, fullPath)
+    const content = await getGitFileContent(repoUrl, branch, fullPath)
 
     if (content === null) {
       return reply.status(404).send({ error: `File not found: ${fullPath}` })
@@ -108,8 +111,9 @@ export async function openspecRoutes(app: FastifyInstance) {
     const project = await getProject(projectId)
     if (!project) return reply.status(404).send({ error: 'Project not found' })
     if (!project.gitRepoUrl) return reply.status(400).send({ error: 'Project has no Git repo configured' })
+    const repoUrl = getAuthenticatedRepoUrl(project)!
 
-    const files = await listGitFiles(project.gitRepoUrl, branch, 'openspec/changes')
+    const files = await listGitFiles(repoUrl, branch, 'openspec/changes')
 
     // Extract unique change names from file paths
     const changeNames = new Set<string>()
@@ -136,12 +140,13 @@ export async function openspecRoutes(app: FastifyInstance) {
     const project = await getProject(projectId)
     if (!project) return reply.status(404).send({ error: 'Project not found' })
     if (!project.gitRepoUrl) return reply.status(400).send({ error: 'Project has no Git repo configured' })
+    const repoUrl = getAuthenticatedRepoUrl(project)!
 
     const fullPath = `openspec/changes/${changeName}/${artifactPath}`
     const msg = commitMessage || `docs: update ${fullPath}`
 
     try {
-      await updateGitFile(project.gitRepoUrl, branch, fullPath, content, msg)
+      await updateGitFile(repoUrl, branch, fullPath, content, msg)
       return { success: true, path: fullPath, commitMessage: msg }
     } catch (err) {
       app.log.error(err, 'Failed to update artifact file')
@@ -155,6 +160,24 @@ export async function openspecRoutes(app: FastifyInstance) {
 async function getProject(projectId: string) {
   const result = await db.select().from(projects).where(eq(projects.id, projectId))
   return result[0] || null
+}
+
+/**
+ * Get the authenticated Git repo URL by injecting access token into HTTPS URL.
+ */
+function getAuthenticatedRepoUrl(project: { gitRepoUrl: string | null; gitAccessToken: string | null }): string | null {
+  if (!project.gitRepoUrl) return null
+  if (!project.gitAccessToken) return project.gitRepoUrl
+  const url = project.gitRepoUrl
+  if (!url.toLowerCase().startsWith('https://')) return url
+  const rest = url.slice('https://'.length)
+  const atIdx = rest.indexOf('@')
+  const slashIdx = rest.indexOf('/')
+  // If @ exists before the first /, strip existing credentials
+  const host = (atIdx >= 0 && (slashIdx < 0 || atIdx < slashIdx))
+    ? rest.slice(atIdx + 1)
+    : rest
+  return `https://${project.gitAccessToken}@${host}`
 }
 
 /**

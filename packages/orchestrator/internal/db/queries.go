@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,14 +32,14 @@ func (c *Client) GetFlowRun(ctx context.Context, id string) (*FlowRun, error) {
 // GetTaskGitInfo retrieves git repo URL and branch from a task
 func (c *Client) GetTaskGitInfo(ctx context.Context, taskID string) (repoURL string, branch string, err error) {
 	row := c.pool.QueryRow(ctx, `
-		SELECT p.git_repo_url, t.git_branch
+		SELECT p.git_repo_url, t.git_branch, p.git_access_token
 		FROM tasks t
 		JOIN projects p ON t.project_id = p.id
 		WHERE t.id = $1
 	`, taskID)
 
-	var repoURLPtr, branchPtr *string
-	if err := row.Scan(&repoURLPtr, &branchPtr); err != nil {
+	var repoURLPtr, branchPtr, tokenPtr *string
+	if err := row.Scan(&repoURLPtr, &branchPtr, &tokenPtr); err != nil {
 		return "", "", fmt.Errorf("get task git info: %w", err)
 	}
 
@@ -49,7 +50,40 @@ func (c *Client) GetTaskGitInfo(ctx context.Context, taskID string) (repoURL str
 		branch = *branchPtr
 	}
 
+	// Inject access token into HTTPS URL: https://TOKEN@github.com/...
+	if tokenPtr != nil && *tokenPtr != "" && repoURL != "" {
+		repoURL = injectTokenIntoURL(repoURL, *tokenPtr)
+	}
+
 	return repoURL, branch, nil
+}
+
+// injectTokenIntoURL inserts an access token into an HTTPS git URL.
+// e.g. https://github.com/user/repo.git → https://TOKEN@github.com/user/repo.git
+func injectTokenIntoURL(rawURL, token string) string {
+	const httpsPrefix = "https://"
+	if !strings.HasPrefix(strings.ToLower(rawURL), httpsPrefix) {
+		return rawURL // not HTTPS, return as-is (e.g. SSH URL)
+	}
+	// If URL already contains @ (has credentials), replace them
+	rest := rawURL[len(httpsPrefix):]
+	if atIdx := indexOf(rest, '@'); atIdx >= 0 {
+		rest = rest[atIdx+1:]
+	}
+	return httpsPrefix + token + "@" + rest
+}
+
+func indexOf(s string, c byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == c {
+			return i
+		}
+		// Stop at first / to avoid matching @ in path
+		if s[i] == '/' {
+			return -1
+		}
+	}
+	return -1
 }
 
 // UpdateFlowRunStatus updates the status of a flow run
