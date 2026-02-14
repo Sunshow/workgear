@@ -9,18 +9,21 @@ import (
 
 // AgentRequest represents a request to an agent
 type AgentRequest struct {
-	TaskID     string         `json:"task_id"`
-	FlowRunID  string         `json:"flow_run_id"`
-	NodeID     string         `json:"node_id"`
-	Mode       string         `json:"mode"` // spec / execute / review / opsx_plan / opsx_apply
-	Prompt     string         `json:"prompt"`
-	Context    map[string]any `json:"context"`
-	WorkDir    string         `json:"work_dir"`
-	GitBranch  string         `json:"git_branch"`
-	GitRepoURL string         `json:"git_repo_url"`
-	RolePrompt string         `json:"role_prompt"`
-	Feedback   string         `json:"feedback"`
-	OpsxConfig *OpsxConfig    `json:"opsx,omitempty"`
+	TaskID          string         `json:"task_id"`
+	FlowRunID       string         `json:"flow_run_id"`
+	NodeID          string         `json:"node_id"`
+	Mode            string         `json:"mode"` // spec / execute / review / opsx_plan / opsx_apply
+	Prompt          string         `json:"prompt"`
+	Context         map[string]any `json:"context"`
+	WorkDir         string         `json:"work_dir"`
+	GitBranch       string         `json:"git_branch"`
+	GitRepoURL      string         `json:"git_repo_url"`
+	GitAccessToken  string         `json:"git_access_token"`
+	TaskTitle       string         `json:"task_title"`
+	NodeName        string         `json:"node_name"`
+	RolePrompt      string         `json:"role_prompt"`
+	Feedback        string         `json:"feedback"`
+	OpsxConfig      *OpsxConfig    `json:"opsx,omitempty"`
 }
 
 // OpsxConfig holds OpenSpec-specific configuration for opsx_plan / opsx_apply modes

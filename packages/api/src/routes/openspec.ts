@@ -8,6 +8,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import { authenticate } from '../middleware/auth.js'
+import { GitHubProvider } from '../lib/github-provider.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -143,14 +144,29 @@ export async function openspecRoutes(app: FastifyInstance) {
     const project = await getProject(projectId)
     if (!project) return reply.status(404).send({ error: 'Project not found' })
     if (!project.gitRepoUrl) return reply.status(400).send({ error: 'Project has no Git repo configured' })
+    if (!project.gitAccessToken) return reply.status(400).send({ error: 'Project has no Git access token configured' })
+    
     const repoUrl = getAuthenticatedRepoUrl(project)!
-
     const fullPath = `openspec/changes/${changeName}/${artifactPath}`
     const msg = commitMessage || `docs: update ${fullPath}`
 
     try {
-      await updateGitFile(repoUrl, branch, fullPath, content, msg)
-      return { success: true, path: fullPath, commitMessage: msg }
+      const result = await updateGitFileWithPR(
+        repoUrl,
+        branch,
+        fullPath,
+        content,
+        msg,
+        project.gitRepoUrl,
+        project.gitAccessToken
+      )
+      return { 
+        success: true, 
+        path: fullPath, 
+        commitMessage: msg,
+        prUrl: result.prUrl,
+        prNumber: result.prNumber
+      }
     } catch (err) {
       app.log.error(err, 'Failed to update artifact file')
       return reply.status(500).send({ error: 'Failed to update file in Git repo' })
@@ -226,30 +242,61 @@ async function getGitFileContent(repoUrl: string, branch: string, filePath: stri
 }
 
 /**
- * Update a file in a Git repo: clone, write, commit, push.
+ * Update a file in a Git repo using PR workflow: clone, write, commit, push to feature branch, create PR.
  */
-async function updateGitFile(
+async function updateGitFileWithPR(
   repoUrl: string,
-  branch: string,
+  baseBranch: string,
   filePath: string,
   content: string,
-  commitMessage: string
-): Promise<void> {
+  commitMessage: string,
+  rawRepoUrl: string,
+  accessToken: string
+): Promise<{ prUrl?: string; prNumber?: number }> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workgear-git-'))
   try {
-    await execFileAsync('git', ['clone', '--depth', '1', '--branch', branch, repoUrl, tmpDir], {
+    // Clone base branch
+    await execFileAsync('git', ['clone', '--depth', '1', '--branch', baseBranch, repoUrl, tmpDir], {
       timeout: 30000,
     })
     await execFileAsync('git', ['config', 'user.email', 'workgear@workgear.dev'], { cwd: tmpDir })
     await execFileAsync('git', ['config', 'user.name', 'WorkGear'], { cwd: tmpDir })
 
+    // Create feature branch
+    const featureBranch = `workgear/edit-${Date.now()}`
+    await execFileAsync('git', ['checkout', '-b', featureBranch], { cwd: tmpDir })
+
+    // Write file
     const fullPath = path.join(tmpDir, filePath)
     await fs.mkdir(path.dirname(fullPath), { recursive: true })
     await fs.writeFile(fullPath, content, 'utf-8')
 
+    // Commit and push
     await execFileAsync('git', ['add', filePath], { cwd: tmpDir })
     await execFileAsync('git', ['commit', '-m', commitMessage], { cwd: tmpDir })
-    await execFileAsync('git', ['push', 'origin', branch], { cwd: tmpDir, timeout: 30000 })
+    await execFileAsync('git', ['push', 'origin', featureBranch], { cwd: tmpDir, timeout: 30000 })
+
+    // Create PR via GitHub API
+    const provider = new GitHubProvider(accessToken)
+    const repoInfo = provider.parseRepoUrl(rawRepoUrl)
+    
+    if (!repoInfo) {
+      throw new Error(`Could not parse GitHub repo from URL: ${rawRepoUrl}`)
+    }
+
+    const prResult = await provider.createPullRequest({
+      owner: repoInfo.owner,
+      repo: repoInfo.repo,
+      title: `[WorkGear] ${commitMessage}`,
+      head: featureBranch,
+      base: baseBranch,
+      body: `Automated update from WorkGear.\n\nFile: \`${filePath}\``,
+    })
+
+    return {
+      prUrl: prResult.url,
+      prNumber: prResult.number,
+    }
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
   }

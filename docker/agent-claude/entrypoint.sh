@@ -69,6 +69,63 @@ $CLAUDE_CMD $CLAUDE_ARGS "$AGENT_PROMPT" > "$RESULT_FILE" 2>/tmp/claude_stderr.l
     exit $EXIT_CODE
 }
 
+# ─── Helper: Create GitHub PR ───
+create_github_pr() {
+    local FEATURE_BRANCH="$1"
+    local BASE_BRANCH="$2"
+    local PR_TITLE="$3"
+    local PR_BODY="$4"
+
+    echo "[agent] Creating GitHub PR: $FEATURE_BRANCH -> $BASE_BRANCH"
+
+    # Extract owner/repo from GIT_REPO_URL
+    # Support: https://github.com/owner/repo.git or https://token@github.com/owner/repo.git
+    local REPO_PATH=$(echo "$GIT_REPO_URL" | sed -E 's|^https?://([^@]*@)?github\.com[/:]||' | sed 's|\.git$||')
+    local OWNER=$(echo "$REPO_PATH" | cut -d'/' -f1)
+    local REPO=$(echo "$REPO_PATH" | cut -d'/' -f2)
+
+    if [ -z "$OWNER" ] || [ -z "$REPO" ]; then
+        echo "[agent] Warning: Could not parse owner/repo from $GIT_REPO_URL, skipping PR creation"
+        return 0
+    fi
+
+    # Extract token from URL or use GIT_ACCESS_TOKEN
+    local TOKEN=""
+    if [ -n "$GIT_ACCESS_TOKEN" ]; then
+        TOKEN="$GIT_ACCESS_TOKEN"
+    else
+        TOKEN=$(echo "$GIT_REPO_URL" | sed -nE 's|^https://([^@]+)@.*|\1|p')
+    fi
+
+    if [ -z "$TOKEN" ]; then
+        echo "[agent] Warning: No access token found, skipping PR creation"
+        return 0
+    fi
+
+    # Call GitHub API
+    local API_URL="https://api.github.com/repos/$OWNER/$REPO/pulls"
+    local RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        -H "Content-Type: application/json" \
+        -d "{\"title\":\"$PR_TITLE\",\"head\":\"$FEATURE_BRANCH\",\"base\":\"$BASE_BRANCH\",\"body\":\"$PR_BODY\"}")
+
+    local HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    local BODY=$(echo "$RESPONSE" | sed '$d')
+
+    if [ "$HTTP_CODE" = "201" ]; then
+        local PR_URL=$(echo "$BODY" | grep -o '"html_url":"[^"]*"' | head -1 | cut -d'"' -f4)
+        echo "[agent] PR created successfully: $PR_URL"
+        echo "$PR_URL" > /output/pr_url.txt
+    elif [ "$HTTP_CODE" = "422" ]; then
+        echo "[agent] PR already exists (422), continuing..."
+    else
+        echo "[agent] Warning: Failed to create PR (HTTP $HTTP_CODE), but branch was pushed successfully"
+        echo "[agent] Response: $BODY"
+    fi
+}
+
 # ─── Step 3: Git commit & push (execute / opsx modes) ───
 SHOULD_PUSH="false"
 if [ "$AGENT_MODE" = "execute" ] || [ "$AGENT_MODE" = "opsx_plan" ] || [ "$AGENT_MODE" = "opsx_apply" ]; then
@@ -81,7 +138,10 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
 
     if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
         echo "[agent] Committing changes..."
-        git add -A
+        
+        # Determine branches
+        FEATURE_BRANCH="${GIT_FEATURE_BRANCH:-${GIT_BRANCH:-main}}"
+        BASE_BRANCH="${GIT_BASE_BRANCH:-main}"
 
         # Build commit message based on mode
         case "$AGENT_MODE" in
@@ -108,10 +168,21 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
                 ;;
         esac
 
+        # Create and switch to feature branch
+        git checkout -b "$FEATURE_BRANCH" 2>&1 || git checkout "$FEATURE_BRANCH" 2>&1
+        git add -A
         git commit -m "$COMMIT_MSG" 2>&1
-        echo "[agent] Pushing to $GIT_BRANCH..."
-        git push origin "$GIT_BRANCH" 2>&1
-        echo "[agent] Changes pushed successfully."
+
+        # Push to feature branch
+        echo "[agent] Pushing to $FEATURE_BRANCH..."
+        git push origin "$FEATURE_BRANCH" --force 2>&1
+        echo "[agent] Changes pushed successfully to $FEATURE_BRANCH"
+
+        # Create PR if requested
+        if [ "$GIT_CREATE_PR" = "true" ]; then
+            PR_TITLE="${GIT_PR_TITLE:-$COMMIT_MSG}"
+            create_github_pr "$FEATURE_BRANCH" "$BASE_BRANCH" "$PR_TITLE" "$COMMIT_MSG"
+        fi
     else
         echo "[agent] No file changes detected."
     fi

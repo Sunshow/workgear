@@ -21,7 +21,12 @@ The container expects the following environment variables:
 | `AGENT_PROMPT` | Yes | The prompt to send to Claude |
 | `AGENT_MODE` | Yes | Execution mode: `spec`, `execute`, or `review` |
 | `GIT_REPO_URL` | No | Git repository URL to clone |
-| `GIT_BRANCH` | No | Git branch to checkout (default: `main`) |
+| `GIT_BRANCH` | No | Base branch to clone from (default: `main`) |
+| `GIT_BASE_BRANCH` | No | Base branch for PR target (default: `main`) |
+| `GIT_FEATURE_BRANCH` | No | Feature branch to push to (default: same as `GIT_BRANCH`) |
+| `GIT_CREATE_PR` | No | Set to `"true"` to create GitHub PR after push |
+| `GIT_PR_TITLE` | No | PR title (used when `GIT_CREATE_PR=true`) |
+| `GIT_ACCESS_TOKEN` | No | GitHub access token for PR creation |
 | `CLAUDE_MODEL` | No | Claude model to use (default: `claude-sonnet-3.5`) |
 | `TASK_ID` | No | Task ID for logging |
 | `NODE_ID` | No | Node ID for logging |
@@ -42,6 +47,22 @@ docker run --rm \
   workgear/agent-claude:latest
 ```
 
+### With PR Workflow
+
+```bash
+docker run --rm \
+  -e ANTHROPIC_API_KEY="sk-ant-xxx" \
+  -e AGENT_PROMPT="Fix the login bug" \
+  -e AGENT_MODE="execute" \
+  -e GIT_REPO_URL="https://token@github.com/user/repo.git" \
+  -e GIT_BASE_BRANCH="main" \
+  -e GIT_FEATURE_BRANCH="agent/fix-login-bug" \
+  -e GIT_CREATE_PR="true" \
+  -e GIT_PR_TITLE="[Agent] Fix login bug" \
+  -e GIT_ACCESS_TOKEN="ghp_xxx" \
+  workgear/agent-claude:latest
+```
+
 ### Orchestrator Integration
 
 The Orchestrator automatically manages container lifecycle:
@@ -54,7 +75,7 @@ The Orchestrator automatically manages container lifecycle:
 ## Execution Flow
 
 1. **Clone Repository** (if `GIT_REPO_URL` is set)
-   - Clones the specified branch
+   - Clones the specified base branch
    - Configures git user for commits
 
 2. **Run Claude CLI**
@@ -62,11 +83,18 @@ The Orchestrator automatically manages container lifecycle:
    - Captures output to `/output/result.json`
 
 3. **Commit & Push** (if `AGENT_MODE=execute`)
+   - Creates and switches to feature branch
    - Stages all changes
    - Commits with auto-generated message
-   - Pushes to the specified branch
+   - Pushes to the feature branch
 
-4. **Output Result**
+4. **Create PR** (if `GIT_CREATE_PR=true`)
+   - Calls GitHub API to create pull request
+   - Feature branch → Base branch
+   - Idempotent (ignores 422 if PR already exists)
+   - Writes PR URL to `/output/pr_url.txt`
+
+5. **Output Result**
    - Prints JSON result to stdout
    - Orchestrator parses this output
 
@@ -101,6 +129,23 @@ Use a personal access token in the URL:
 GIT_REPO_URL="https://token@github.com/user/repo.git"
 ```
 
+### Option 3: Separate Token (for PR creation)
+Pass token separately for GitHub API:
+```bash
+GIT_ACCESS_TOKEN="ghp_xxx"
+```
+
+## PR Workflow
+
+When `GIT_CREATE_PR=true`:
+
+1. Agent pushes changes to `GIT_FEATURE_BRANCH`
+2. Extracts `owner/repo` from `GIT_REPO_URL`
+3. Calls GitHub API: `POST /repos/{owner}/{repo}/pulls`
+4. Uses `GIT_ACCESS_TOKEN` for authentication
+5. If PR already exists (422), silently continues
+6. If PR creation fails, logs warning but doesn't fail the job
+
 ## Troubleshooting
 
 ### Container exits with code 1
@@ -112,6 +157,11 @@ GIT_REPO_URL="https://token@github.com/user/repo.git"
 - Verify repository URL is correct
 - Check authentication (SSH key or token)
 - Ensure branch exists
+
+### PR creation fails
+- Verify `GIT_ACCESS_TOKEN` has `repo` scope
+- Check repository URL is a valid GitHub URL
+- Review GitHub API error in logs
 
 ### No output
 - Check `/output/result.json` exists in container

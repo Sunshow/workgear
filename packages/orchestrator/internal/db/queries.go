@@ -58,6 +58,38 @@ func (c *Client) GetTaskGitInfo(ctx context.Context, taskID string) (repoURL str
 	return repoURL, branch, nil
 }
 
+// GetTaskGitInfoFull retrieves git repo URL, branch, access token, and task title
+func (c *Client) GetTaskGitInfoFull(ctx context.Context, taskID string) (repoURL, branch, accessToken, taskTitle string, err error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT p.git_repo_url, t.git_branch, p.git_access_token, COALESCE(t.title, '')
+		FROM tasks t
+		JOIN projects p ON t.project_id = p.id
+		WHERE t.id = $1
+	`, taskID)
+
+	var repoURLPtr, branchPtr, tokenPtr *string
+	if err := row.Scan(&repoURLPtr, &branchPtr, &tokenPtr, &taskTitle); err != nil {
+		return "", "", "", "", fmt.Errorf("get task git info full: %w", err)
+	}
+
+	if repoURLPtr != nil {
+		repoURL = *repoURLPtr
+	}
+	if branchPtr != nil {
+		branch = *branchPtr
+	}
+	if tokenPtr != nil {
+		accessToken = *tokenPtr
+	}
+
+	// Inject access token into HTTPS URL for repoURL
+	if accessToken != "" && repoURL != "" {
+		repoURL = injectTokenIntoURL(repoURL, accessToken)
+	}
+
+	return repoURL, branch, accessToken, taskTitle, nil
+}
+
 // injectTokenIntoURL inserts an access token into an HTTPS git URL.
 // e.g. https://github.com/user/repo.git → https://TOKEN@github.com/user/repo.git
 func injectTokenIntoURL(rawURL, token string) string {

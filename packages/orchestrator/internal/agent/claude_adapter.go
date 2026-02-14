@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -61,10 +63,27 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 	if req.GitRepoURL != "" {
 		env["GIT_REPO_URL"] = req.GitRepoURL
 	}
-	if req.GitBranch != "" {
-		env["GIT_BRANCH"] = req.GitBranch
-	} else {
-		env["GIT_BRANCH"] = "main"
+	
+	// Base branch (for cloning)
+	baseBranch := req.GitBranch
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	env["GIT_BRANCH"] = baseBranch
+	env["GIT_BASE_BRANCH"] = baseBranch
+
+	// Feature branch (for pushing)
+	featureBranch := generateFeatureBranch(req.TaskTitle, req.GitBranch)
+	env["GIT_FEATURE_BRANCH"] = featureBranch
+
+	// PR configuration
+	env["GIT_CREATE_PR"] = "true"
+	prTitle := generatePRTitle(req.TaskTitle, req.NodeName)
+	env["GIT_PR_TITLE"] = prTitle
+
+	// Access token (for GitHub API)
+	if req.GitAccessToken != "" {
+		env["GIT_ACCESS_TOKEN"] = req.GitAccessToken
 	}
 
 	// Model selection
@@ -165,4 +184,47 @@ type ClaudeOutput struct {
 	TokensIn     int            `json:"tokens_in,omitempty"`
 	TokensOut    int            `json:"tokens_out,omitempty"`
 	DurationMs   int64          `json:"duration_ms,omitempty"`
+}
+
+// generateFeatureBranch creates a feature branch name from task title
+// Format: agent/{task-title-slug}
+// If gitBranch is already set and not "main", use it as-is
+func generateFeatureBranch(taskTitle, gitBranch string) string {
+	// If git_branch is already set and not main, use it
+	if gitBranch != "" && gitBranch != "main" {
+		return gitBranch
+	}
+
+	// Generate slug from task title
+	slug := strings.ToLower(taskTitle)
+	// Replace spaces with hyphens
+	slug = strings.ReplaceAll(slug, " ", "-")
+	// Remove special characters (keep only alphanumeric and hyphens)
+	reg := regexp.MustCompile(`[^a-z0-9-]+`)
+	slug = reg.ReplaceAllString(slug, "")
+	// Remove consecutive hyphens
+	reg = regexp.MustCompile(`-+`)
+	slug = reg.ReplaceAllString(slug, "-")
+	// Trim hyphens from start/end
+	slug = strings.Trim(slug, "-")
+	// Truncate to 50 characters
+	if len(slug) > 50 {
+		slug = slug[:50]
+	}
+	// Trim trailing hyphen after truncation
+	slug = strings.TrimRight(slug, "-")
+
+	if slug == "" {
+		slug = "task"
+	}
+
+	return "agent/" + slug
+}
+
+// generatePRTitle creates a PR title from task title and node name
+func generatePRTitle(taskTitle, nodeName string) string {
+	if nodeName != "" {
+		return fmt.Sprintf("[Agent] %s - %s", taskTitle, nodeName)
+	}
+	return fmt.Sprintf("[Agent] %s", taskTitle)
 }

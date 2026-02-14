@@ -70,8 +70,8 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		inputCtx = make(map[string]any)
 	}
 
-	// Get git information from task
-	gitRepoURL, gitBranch, err := e.db.GetTaskGitInfo(ctx, flowRun.TaskID)
+	// Get git information from task (full version with access token and title)
+	gitRepoURL, gitBranch, gitAccessToken, taskTitle, err := e.db.GetTaskGitInfoFull(ctx, flowRun.TaskID)
 	if err != nil {
 		e.logger.Warnw("Failed to get git info", "error", err)
 	}
@@ -88,15 +88,18 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 	inputCtx["_role"] = role
 
 	agentReq := &agent.AgentRequest{
-		TaskID:     nodeRun.ID,
-		FlowRunID:  nodeRun.FlowRunID,
-		NodeID:     nodeRun.NodeID,
-		Mode:       mode,
-		Prompt:     prompt,
-		Context:    inputCtx,
-		GitRepoURL: gitRepoURL,
-		GitBranch:  gitBranch,
-		Feedback:   feedback,
+		TaskID:         nodeRun.ID,
+		FlowRunID:     nodeRun.FlowRunID,
+		NodeID:         nodeRun.NodeID,
+		Mode:           mode,
+		Prompt:         prompt,
+		Context:        inputCtx,
+		GitRepoURL:     gitRepoURL,
+		GitBranch:      gitBranch,
+		GitAccessToken: gitAccessToken,
+		TaskTitle:      taskTitle,
+		NodeName:       ptrStr(nodeRun.NodeName),
+		Feedback:       feedback,
 	}
 
 	// Resolve OpenSpec config for opsx_plan / opsx_apply modes
