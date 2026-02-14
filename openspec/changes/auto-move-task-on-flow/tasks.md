@@ -32,6 +32,17 @@
 - [x] 确认前端 WebSocket 事件处理器在收到 flow.started/completed/cancelled 时会重新拉取任务列表 **[S]**
 - [x] 如果未自动刷新，在事件处理器中增加 `fetchTasks()` 调用 **[M]**
 
+## 反馈修复
+
+### P1: WebSocket wildcard 订阅替换为项目级频道
+
+- [x] 在 `gateway.ts` 中新增 `broadcastToProjectChannel()`，flow 生命周期事件广播到 `project:{projectId}` 频道 **[S]**
+- [x] 在 `kanban/index.tsx` 中将 `useWebSocket('*', ...)` 替换为 `useWebSocket(\`project:${projectId}\`, ...)` **[S]**
+
+### P2: SQL 子查询自连接歧义修复
+
+- [x] 在 `UpdateTaskColumn()` 的 SQL 中移除 `JOIN tasks t`，改为直接引用外层 `tasks.project_id` **[S]**
+
 ## 测试验证
 
 ### 端到端验证

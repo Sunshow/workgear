@@ -95,9 +95,16 @@ export function startEventForwarding(logger: { info: (...args: any[]) => void; e
           broadcast(`flow-run:${event.flowRunId}`, wsEvent)
         }
 
-        // Also broadcast to task channel if we can derive it
-        // (clients subscribe to task:{taskId})
+        // Also broadcast to event-type channel
         broadcast(`event:${event.eventType}`, wsEvent)
+
+        // For flow lifecycle events, broadcast to project channel so kanban pages can refresh
+        const flowLifecycleEvents = ['flow.started', 'flow.completed', 'flow.cancelled', 'flow.failed']
+        if (flowLifecycleEvents.includes(event.eventType) && event.flowRunId) {
+          broadcastToProjectChannel(event.flowRunId, wsEvent, logger).catch(err => {
+            logger.warn(`Failed to broadcast to project channel: ${err.message}`)
+          })
+        }
 
         // Handle flow.completed — auto-merge PR if enabled
         if (event.eventType === 'flow.completed' && event.flowRunId) {
@@ -126,6 +133,22 @@ export function stopEventForwarding() {
     eventStreamHandle.cancel()
     eventStreamHandle = null
   }
+}
+
+// ─── Broadcast Flow Events to Project Channel ───
+
+async function broadcastToProjectChannel(
+  flowRunId: string,
+  wsEvent: Record<string, unknown>,
+  logger: { info: (...args: any[]) => void; error: (...args: any[]) => void; warn: (...args: any[]) => void }
+) {
+  const [flowRun] = await db.select().from(flowRuns).where(eq(flowRuns.id, flowRunId))
+  if (!flowRun?.taskId) return
+
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, flowRun.taskId))
+  if (!task?.projectId) return
+
+  broadcast(`project:${task.projectId}`, wsEvent)
 }
 
 // ─── Auto-Merge PR on Flow Completion ───

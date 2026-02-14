@@ -43,7 +43,7 @@ export function KanbanPage() {
     }
   }, [projectId, setTasks])
 
-  useWebSocket('*', useCallback((event) => {
+  useWebSocket(projectId ? `project:${projectId}` : '__noop__', useCallback((event) => {
     const flowEvents = ['flow.started', 'flow.completed', 'flow.cancelled']
     if (flowEvents.includes(event.type)) {
       refreshTasks()

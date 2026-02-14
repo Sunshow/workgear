@@ -573,8 +573,7 @@ func (c *Client) UpdateTaskColumn(ctx context.Context, taskID, columnName string
 		SET column_id = (
 			SELECT kc.id FROM kanban_columns kc
 			JOIN kanbans k ON kc.kanban_id = k.id
-			JOIN tasks t ON t.project_id = k.project_id
-			WHERE t.id = $1 AND kc.name = $2
+			WHERE k.project_id = tasks.project_id AND kc.name = $2
 			LIMIT 1
 		),
 		updated_at = NOW()
@@ -582,8 +581,7 @@ func (c *Client) UpdateTaskColumn(ctx context.Context, taskID, columnName string
 		AND EXISTS (
 			SELECT 1 FROM kanban_columns kc
 			JOIN kanbans k ON kc.kanban_id = k.id
-			JOIN tasks t ON t.project_id = k.project_id
-			WHERE t.id = $1 AND kc.name = $2
+			WHERE k.project_id = tasks.project_id AND kc.name = $2
 		)
 	`, taskID, columnName)
 	if err != nil {
