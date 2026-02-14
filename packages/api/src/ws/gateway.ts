@@ -1,7 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
+import { eq } from 'drizzle-orm'
 import { subscribeEvents } from '../grpc/client.js'
 import type { ServerEvent } from '../grpc/client.js'
+import { db } from '../db/index.js'
+import { flowRuns, tasks, projects, timelineEvents } from '../db/schema.js'
+import { GitHubProvider } from '../lib/github-provider.js'
 
 interface WSClient {
   ws: WebSocket
@@ -94,6 +98,13 @@ export function startEventForwarding(logger: { info: (...args: any[]) => void; e
         // Also broadcast to task channel if we can derive it
         // (clients subscribe to task:{taskId})
         broadcast(`event:${event.eventType}`, wsEvent)
+
+        // Handle flow.completed — auto-merge PR if enabled
+        if (event.eventType === 'flow.completed' && event.flowRunId) {
+          handleFlowCompletedAutoMerge(event.flowRunId, logger).catch(err => {
+            logger.error(`Auto-merge error for flow ${event.flowRunId}: ${err.message}`)
+          })
+        }
       },
       (err: Error) => {
         logger.warn(`Orchestrator event stream error: ${err.message}`)
@@ -114,5 +125,75 @@ export function stopEventForwarding() {
   if (eventStreamHandle) {
     eventStreamHandle.cancel()
     eventStreamHandle = null
+  }
+}
+
+// ─── Auto-Merge PR on Flow Completion ───
+
+async function handleFlowCompletedAutoMerge(
+  flowRunId: string,
+  logger: { info: (...args: any[]) => void; error: (...args: any[]) => void; warn: (...args: any[]) => void }
+) {
+  // 1. Query flow_run
+  const [flowRun] = await db.select().from(flowRuns).where(eq(flowRuns.id, flowRunId))
+  if (!flowRun?.prNumber) return // No PR, skip
+
+  // 2. Query task → project
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, flowRun.taskId))
+  if (!task) return
+
+  const [project] = await db.select().from(projects).where(eq(projects.id, task.projectId))
+  if (!project?.autoMergePr || !project.gitAccessToken || !project.gitRepoUrl) return
+
+  // 3. Execute squash merge
+  const provider = new GitHubProvider(project.gitAccessToken)
+  const repoInfo = provider.parseRepoUrl(project.gitRepoUrl)
+  if (!repoInfo) return
+
+  logger.info(`Auto-merging PR #${flowRun.prNumber} for flow ${flowRunId}...`)
+
+  const mergeResult = await provider.mergePullRequest({
+    owner: repoInfo.owner,
+    repo: repoInfo.repo,
+    pullNumber: flowRun.prNumber,
+    mergeMethod: 'squash',
+    commitTitle: task.title,
+  })
+
+  if (mergeResult.merged) {
+    // 4. Update flow_run
+    await db.update(flowRuns).set({ prMergedAt: new Date() }).where(eq(flowRuns.id, flowRunId))
+
+    // 5. Record timeline
+    await db.insert(timelineEvents).values({
+      taskId: task.id,
+      flowRunId: flowRunId,
+      eventType: 'pr_merged',
+      content: {
+        prUrl: flowRun.prUrl,
+        message: `PR 已自动合并`,
+      },
+    })
+
+    // 6. Delete feature branch
+    if (flowRun.branchName) {
+      await provider.deleteBranch(repoInfo.owner, repoInfo.repo, flowRun.branchName).catch(() => {})
+    }
+
+    logger.info(`Auto-merged PR #${flowRun.prNumber} for flow ${flowRunId}`)
+  } else {
+    // Record merge failure
+    await db.insert(timelineEvents).values({
+      taskId: task.id,
+      flowRunId: flowRunId,
+      eventType: 'pr_merge_failed',
+      content: {
+        prUrl: flowRun.prUrl,
+        error: mergeResult.message,
+        message: `PR 自动合并失败: ${mergeResult.message}`,
+      },
+    })
+
+    logger.warn(`Failed to auto-merge PR #${flowRun.prNumber}: ${mergeResult.message}`)
   }
 }

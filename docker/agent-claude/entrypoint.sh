@@ -131,8 +131,10 @@ create_github_pr() {
 
     if [ "$HTTP_CODE" = "201" ]; then
         local PR_URL=$(echo "$BODY" | grep -o '"html_url":"[^"]*"' | head -1 | cut -d'"' -f4)
-        echo "[agent] PR created successfully: $PR_URL"
+        local PR_NUMBER=$(echo "$BODY" | grep -o '"number":[0-9]*' | head -1 | cut -d':' -f2)
+        echo "[agent] PR created successfully: $PR_URL (#$PR_NUMBER)"
         echo "$PR_URL" > /output/pr_url.txt
+        echo "$PR_NUMBER" > /output/pr_number.txt
     elif [ "$HTTP_CODE" = "422" ]; then
         echo "[agent] PR already exists (422), continuing..."
     else
@@ -202,6 +204,7 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
         # ─── Record Git metadata ───
         COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "")
         PR_URL_VALUE=$(cat /output/pr_url.txt 2>/dev/null || echo "")
+        PR_NUMBER_VALUE=$(cat /output/pr_number.txt 2>/dev/null || echo "0")
         CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | head -50 || echo "")
 
         jq -n \
@@ -210,6 +213,7 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
             --arg commit "$COMMIT_HASH" \
             --arg commit_msg "$COMMIT_MSG" \
             --arg pr_url "$PR_URL_VALUE" \
+            --argjson pr_number "${PR_NUMBER_VALUE:-0}" \
             --arg changed_files "$CHANGED_FILES" \
             '{
                 branch: $branch,
@@ -217,6 +221,7 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
                 commit: $commit,
                 commit_message: $commit_msg,
                 pr_url: $pr_url,
+                pr_number: $pr_number,
                 changed_files: ($changed_files | split("\n") | map(select(. != "")))
             }' > "$GIT_METADATA_FILE"
 

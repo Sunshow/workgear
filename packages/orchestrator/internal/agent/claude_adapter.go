@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	gopinyin "github.com/mozillazg/go-pinyin"
 )
 
 // ClaudeCodeAdapter is a TypeAdapter for ClaudeCode CLI
@@ -73,13 +75,21 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 	env["GIT_BASE_BRANCH"] = baseBranch
 
 	// Feature branch (for pushing)
-	featureBranch := generateFeatureBranch(req.TaskTitle, req.GitBranch)
+	// Priority: 1. OpsxConfig.ChangeName, 2. existing gitBranch (non-main), 3. generate from task title
+	featureBranch := req.GitBranch
+	if featureBranch == "" || featureBranch == "main" {
+		if req.OpsxConfig != nil && req.OpsxConfig.ChangeName != "" {
+			featureBranch = "agent/" + req.OpsxConfig.ChangeName
+		} else {
+			featureBranch = generateFeatureBranch(req.TaskTitle, "")
+		}
+	}
 	env["GIT_FEATURE_BRANCH"] = featureBranch
 
 	// PR configuration
 	env["GIT_CREATE_PR"] = "true"
-	prTitle := generatePRTitle(req.TaskTitle, req.NodeName)
-	env["GIT_PR_TITLE"] = prTitle
+	// PR title: pure task title (no [Agent] prefix, no node name)
+	env["GIT_PR_TITLE"] = req.TaskTitle
 
 	// Access token (for GitHub API)
 	if req.GitAccessToken != "" {
@@ -190,6 +200,7 @@ type ClaudeOutput struct {
 
 // generateFeatureBranch creates a feature branch name from task title
 // Format: agent/{task-title-slug}
+// Supports Chinese characters via pinyin conversion
 // If gitBranch is already set and not "main", use it as-is
 func generateFeatureBranch(taskTitle, gitBranch string) string {
 	// If git_branch is already set and not main, use it
@@ -197,23 +208,37 @@ func generateFeatureBranch(taskTitle, gitBranch string) string {
 		return gitBranch
 	}
 
-	// Generate slug from task title
-	slug := strings.ToLower(taskTitle)
-	// Replace spaces with hyphens
-	slug = strings.ReplaceAll(slug, " ", "-")
-	// Remove special characters (keep only alphanumeric and hyphens)
-	reg := regexp.MustCompile(`[^a-z0-9-]+`)
-	slug = reg.ReplaceAllString(slug, "")
-	// Remove consecutive hyphens
-	reg = regexp.MustCompile(`-+`)
-	slug = reg.ReplaceAllString(slug, "-")
-	// Trim hyphens from start/end
-	slug = strings.Trim(slug, "-")
-	// Truncate to 50 characters
-	if len(slug) > 50 {
-		slug = slug[:50]
+	// Convert Chinese characters to pinyin, keep ASCII as-is
+	a := gopinyin.NewArgs()
+	a.Style = gopinyin.Normal // no tone marks
+	pinyinResult := gopinyin.Pinyin(taskTitle, a)
+
+	var parts []string
+	pinyinIdx := 0
+	for _, r := range taskTitle {
+		if r >= 0x4e00 && r <= 0x9fff { // CJK character
+			if pinyinIdx < len(pinyinResult) && len(pinyinResult[pinyinIdx]) > 0 {
+				parts = append(parts, pinyinResult[pinyinIdx][0])
+			}
+			pinyinIdx++
+		} else if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			parts = append(parts, strings.ToLower(string(r)))
+		} else if r == ' ' || r == '-' || r == '_' {
+			parts = append(parts, "-")
+		}
+		// skip other characters
 	}
-	// Trim trailing hyphen after truncation
+
+	slug := strings.Join(parts, "-")
+	// Clean up consecutive hyphens
+	reg := regexp.MustCompile(`-+`)
+	slug = reg.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+
+	// Limit to 30 characters (excluding agent/ prefix)
+	if len(slug) > 30 {
+		slug = slug[:30]
+	}
 	slug = strings.TrimRight(slug, "-")
 
 	if slug == "" {
@@ -221,12 +246,4 @@ func generateFeatureBranch(taskTitle, gitBranch string) string {
 	}
 
 	return "agent/" + slug
-}
-
-// generatePRTitle creates a PR title from task title and node name
-func generatePRTitle(taskTitle, nodeName string) string {
-	if nodeName != "" {
-		return fmt.Sprintf("[Agent] %s - %s", taskTitle, nodeName)
-	}
-	return fmt.Sprintf("[Agent] %s", taskTitle)
 }

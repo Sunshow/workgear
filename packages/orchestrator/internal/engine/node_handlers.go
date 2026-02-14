@@ -464,5 +464,11 @@ func (e *FlowExecutor) updateTaskGitInfo(ctx context.Context, taskID, flowRunID,
 		})
 	}
 
+	// Update flow_runs PR info (branch_name, pr_url, pr_number)
+	if err := e.db.UpdateFlowRunPR(ctx, flowRunID, git.Branch, git.PrUrl, git.PrNumber); err != nil {
+		e.logger.Warnw("Failed to update flow run PR info", "error", err)
+		// Non-fatal
+	}
+
 	return nil
 }

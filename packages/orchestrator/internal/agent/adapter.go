@@ -48,6 +48,7 @@ type GitMetadata struct {
 	Commit        string   `json:"commit"`
 	CommitMessage string   `json:"commit_message,omitempty"`
 	PrUrl         string   `json:"pr_url,omitempty"`
+	PrNumber      int      `json:"pr_number,omitempty"`
 	ChangedFiles  []string `json:"changed_files,omitempty"`
 }
 

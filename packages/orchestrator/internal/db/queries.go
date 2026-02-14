@@ -575,3 +575,19 @@ func (c *Client) UpdateTaskGitBranch(ctx context.Context, taskID, branch string)
 	return nil
 }
 
+// UpdateFlowRunPR updates PR-related fields on a flow run.
+// Uses COALESCE to only write non-empty values, preserving existing data.
+func (c *Client) UpdateFlowRunPR(ctx context.Context, flowRunID, branchName, prUrl string, prNumber int) error {
+	_, err := c.pool.Exec(ctx, `
+		UPDATE flow_runs
+		SET branch_name = COALESCE(NULLIF($2, ''), branch_name),
+		    pr_url = COALESCE(NULLIF($3, ''), pr_url),
+		    pr_number = COALESCE(NULLIF($4, 0), pr_number)
+		WHERE id = $1
+	`, flowRunID, branchName, prUrl, prNumber)
+	if err != nil {
+		return fmt.Errorf("update flow run PR: %w", err)
+	}
+	return nil
+}
+
