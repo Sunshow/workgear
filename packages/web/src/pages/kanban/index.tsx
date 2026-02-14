@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { DndContext, DragEndEvent, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { api } from '@/lib/api'
 import type { Kanban, KanbanColumn, Task, Project } from '@/lib/types'
 import { useKanbanStore } from '@/stores/kanban-store'
+import { useWebSocket } from '@/hooks/use-websocket'
 import { Button } from '@/components/ui/button'
 import { KanbanColumnComponent } from './kanban-column'
 import { CreateTaskDialog } from './create-task-dialog'
@@ -30,6 +31,24 @@ export function KanbanPage() {
       },
     })
   )
+
+  // Listen for flow lifecycle events to auto-refresh task positions on the kanban board
+  const refreshTasks = useCallback(async () => {
+    if (!projectId) return
+    try {
+      const tasksData = await api.get('tasks', { searchParams: { projectId } }).json<Task[]>()
+      setTasks(tasksData)
+    } catch (error) {
+      console.error('Failed to refresh tasks:', error)
+    }
+  }, [projectId, setTasks])
+
+  useWebSocket('*', useCallback((event) => {
+    const flowEvents = ['flow.started', 'flow.completed', 'flow.cancelled']
+    if (flowEvents.includes(event.type)) {
+      refreshTasks()
+    }
+  }, [refreshTasks]))
 
   useEffect(() => {
     if (projectId) {

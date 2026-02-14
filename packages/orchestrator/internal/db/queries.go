@@ -564,6 +564,34 @@ func (c *Client) CreateArtifactVersion(ctx context.Context, artifactID string, v
 	return nil
 }
 
+// UpdateTaskColumn moves a task to the specified kanban column by column name.
+// Uses a subquery to find the column ID from the task's project kanban.
+// Silently does nothing if the column name doesn't exist.
+func (c *Client) UpdateTaskColumn(ctx context.Context, taskID, columnName string) error {
+	_, err := c.pool.Exec(ctx, `
+		UPDATE tasks
+		SET column_id = (
+			SELECT kc.id FROM kanban_columns kc
+			JOIN kanbans k ON kc.kanban_id = k.id
+			JOIN tasks t ON t.project_id = k.project_id
+			WHERE t.id = $1 AND kc.name = $2
+			LIMIT 1
+		),
+		updated_at = NOW()
+		WHERE id = $1
+		AND EXISTS (
+			SELECT 1 FROM kanban_columns kc
+			JOIN kanbans k ON kc.kanban_id = k.id
+			JOIN tasks t ON t.project_id = k.project_id
+			WHERE t.id = $1 AND kc.name = $2
+		)
+	`, taskID, columnName)
+	if err != nil {
+		return fmt.Errorf("update task column: %w", err)
+	}
+	return nil
+}
+
 // UpdateTaskGitBranch updates the git_branch field of a task
 func (c *Client) UpdateTaskGitBranch(ctx context.Context, taskID, branch string) error {
 	_, err := c.pool.Exec(ctx, `
