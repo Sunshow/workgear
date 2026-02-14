@@ -204,3 +204,75 @@
 - User can cancel running flow
 - Real-time updates via polling or WebSocket
 - Progress bar shows overall completion percentage
+
+---
+
+## Scenario: StartFlow 成功后移动任务到 In Progress
+
+### Given
+- FlowRun 已创建，状态为 PENDING
+- FlowRun 关联的 Task 存在且有有效的 project_id
+
+### When
+- StartFlow() 成功完成以下步骤：
+  - 解析 DSL
+  - 创建所有 NodeRun
+  - 将 FlowRun 状态更新为 RUNNING
+  - 发布 flow.started 事件
+  - 记录 timeline
+
+### Then
+- 在 return 之前调用 UpdateTaskColumn(taskID, "In Progress")
+- 如果 UpdateTaskColumn 失败，记录 warn 日志但不返回错误
+- 流程执行正常继续
+
+---
+
+## Scenario: 所有节点完成后移动任务到 Done
+
+### Given
+- FlowRun 状态为 RUNNING
+- advanceDAG() 检测到所有节点已完成
+
+### When
+- FlowRun 状态更新为 COMPLETED
+- flow.completed 事件已发布
+
+### Then
+- 调用 UpdateTaskColumn(taskID, "Done")
+- 如果 UpdateTaskColumn 失败，记录 warn 日志但不影响流程完成状态
+
+---
+
+## Scenario: 流程取消后回退任务到 Backlog
+
+### Given
+- FlowRun 状态为 RUNNING
+- 用户请求取消流程
+
+### When
+- CancelFlow() 成功将 FlowRun 状态更新为 CANCELLED
+- flow.cancelled 事件已发布
+
+### Then
+- 调用 UpdateTaskColumn(taskID, "Backlog")
+- 如果 UpdateTaskColumn 失败，记录 warn 日志但不影响取消操作
+
+---
+
+## Scenario: UpdateTaskColumn 数据库查询逻辑
+
+### Given
+- 需要将 taskID 对应的任务移动到名为 columnName 的列
+
+### When
+- 执行 UpdateTaskColumn(taskID, columnName)
+
+### Then
+- 通过子查询查找目标列：
+  - 从 tasks 表获取 task 的 project_id
+  - 从 kanbans 表找到该 project 的看板
+  - 从 kanban_columns 表找到名称匹配的列
+- 更新 tasks.column_id 为目标列 ID
+- 更新 tasks.updated_at 为当前时间
+- 如果子查询未找到匹配列，UPDATE 影响 0 行（静默无操作）

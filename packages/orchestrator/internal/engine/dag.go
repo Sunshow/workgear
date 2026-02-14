@@ -89,6 +89,11 @@ func (e *FlowExecutor) advanceDAG(ctx context.Context, flowRunID string) error {
 			e.recordTimeline(ctx, flowRun.TaskID, flowRunID, "", "flow_completed", map[string]any{
 				"message": "流程执行完成",
 			})
+
+			// Auto-move task to "Done" column
+			if err := e.db.UpdateTaskColumn(ctx, flowRun.TaskID, "Done"); err != nil {
+				e.logger.Warnw("Failed to move task to Done", "task_id", flowRun.TaskID, "error", err)
+			}
 		}
 
 		e.logger.Infow("Flow completed", "flow_run_id", flowRunID)
@@ -213,6 +218,11 @@ func (e *FlowExecutor) StartFlow(ctx context.Context, flowRunID, dsl string, var
 		"workflow_name": wf.Name,
 	})
 
+	// 8. Auto-move task to "In Progress" column
+	if err := e.db.UpdateTaskColumn(ctx, flowRun.TaskID, "In Progress"); err != nil {
+		e.logger.Warnw("Failed to move task to In Progress", "task_id", flowRun.TaskID, "error", err)
+	}
+
 	return nil
 }
 
@@ -242,6 +252,11 @@ func (e *FlowExecutor) CancelFlow(ctx context.Context, flowRunID string) error {
 	e.recordTimeline(ctx, flowRun.TaskID, flowRunID, "", "flow_cancelled", map[string]any{
 		"message": "流程已取消",
 	})
+
+	// Auto-move task back to "Backlog" column
+	if err := e.db.UpdateTaskColumn(ctx, flowRun.TaskID, "Backlog"); err != nil {
+		e.logger.Warnw("Failed to move task to Backlog", "task_id", flowRun.TaskID, "error", err)
+	}
 
 	return nil
 }
