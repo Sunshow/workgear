@@ -187,6 +187,11 @@ func modeInstruction(mode string) string {
 4. 逐项实施任务，完成后在 tasks.md 中标记 [x]
 5. 确保实施符合 specs 中定义的需求和场景
 6. 所有代码变更都要 git add`
+	case "generate_change_name":
+		return `当前模式：生成变更名称（generate_change_name）
+请根据需求描述生成一个简短的英文变更名称（slug 格式）。
+输出格式为 JSON：{"change_name": "xxx-yyy-zzz"}
+只输出 JSON，不要其他内容。`
 	default:
 		return ""
 	}

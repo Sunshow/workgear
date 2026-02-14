@@ -4,6 +4,7 @@ import type { FlowRun, NodeRun } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { useFlowRunEvents } from '@/hooks/use-websocket'
 import { XCircle, CheckCircle, RotateCcw, Clock, Play, AlertCircle, Pencil, Loader2 } from 'lucide-react'
 
@@ -308,32 +309,19 @@ function NodeRunItem({ nodeRun, onActionComplete }: { nodeRun: NodeRun; onAction
 
           {/* Submit for human_input */}
           {nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'human_input' && (
-            <div className="space-y-2">
-              <Textarea
-                placeholder="输入内容..."
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                rows={3}
-                className="text-sm"
-              />
-              <Button size="sm" onClick={async () => {
-                setSubmitting(true)
-                try {
-                  await api.post(`node-runs/${nodeRun.id}/submit`, {
-                    json: { text: feedback },
-                  })
-                  setFeedback('')
-                  onActionComplete()
-                } catch (error: any) {
-                  alert(`提交失败: ${error.message}`)
-                } finally {
-                  setSubmitting(false)
-                }
-              }} disabled={submitting || !feedback.trim()}>
-                <Play className="mr-1 h-3 w-3" />
-                提交
-              </Button>
-            </div>
+            <HumanInputForm nodeRun={nodeRun} onSubmit={async (data) => {
+              setSubmitting(true)
+              try {
+                await api.post(`node-runs/${nodeRun.id}/submit`, {
+                  json: data,
+                })
+                onActionComplete()
+              } catch (error: any) {
+                alert(`提交失败: ${error.message}`)
+              } finally {
+                setSubmitting(false)
+              }
+            }} submitting={submitting} />
           )}
 
           {/* Retry for failed nodes */}
@@ -389,4 +377,96 @@ function filterInternalFields(output: any): any {
   if (!output || typeof output !== 'object') return output
   const { _artifact_id, _feedback, _role, raw, ...rest } = output
   return rest
+}
+
+// ─── Dynamic Human Input Form ───
+
+interface FormFieldDef {
+  field: string
+  type: 'text' | 'textarea' | 'select' | 'number'
+  label: string
+  required?: boolean
+  options?: string[]
+}
+
+function HumanInputForm({ nodeRun, onSubmit, submitting }: {
+  nodeRun: NodeRun
+  onSubmit: (data: Record<string, string>) => void
+  submitting: boolean
+}) {
+  // Try to extract form definition from input (set by WebSocket event)
+  const formFields: FormFieldDef[] = nodeRun.input?.form || []
+  const [formData, setFormData] = useState<Record<string, string>>({})
+
+  const updateField = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const isValid = formFields.length > 0
+    ? formFields.filter(f => f.required).every(f => formData[f.field]?.trim())
+    : formData._text?.trim()
+
+  // Fallback: single textarea if no form definition
+  if (formFields.length === 0) {
+    return (
+      <div className="space-y-2">
+        <Textarea
+          placeholder="输入内容..."
+          value={formData._text || ''}
+          onChange={(e) => updateField('_text', e.target.value)}
+          rows={3}
+          className="text-sm"
+        />
+        <Button size="sm" onClick={() => onSubmit({ text: formData._text || '' })} disabled={submitting || !isValid}>
+          <Play className="mr-1 h-3 w-3" />
+          提交
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {formFields.map((field) => (
+        <div key={field.field} className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">
+            {field.label}
+            {field.required && <span className="text-destructive ml-0.5">*</span>}
+          </label>
+          {field.type === 'textarea' ? (
+            <Textarea
+              placeholder={field.label}
+              value={formData[field.field] || ''}
+              onChange={(e) => updateField(field.field, e.target.value)}
+              rows={3}
+              className="text-sm"
+            />
+          ) : field.type === 'select' && field.options ? (
+            <select
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              value={formData[field.field] || ''}
+              onChange={(e) => updateField(field.field, e.target.value)}
+            >
+              <option value="">请选择...</option>
+              {field.options.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          ) : (
+            <Input
+              type={field.type === 'number' ? 'number' : 'text'}
+              placeholder={field.label}
+              value={formData[field.field] || ''}
+              onChange={(e) => updateField(field.field, e.target.value)}
+              className="text-sm"
+            />
+          )}
+        </div>
+      ))}
+      <Button size="sm" onClick={() => onSubmit(formData)} disabled={submitting || !isValid}>
+        <Play className="mr-1 h-3 w-3" />
+        提交
+      </Button>
+    </div>
+  )
 }

@@ -136,6 +136,19 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
+	// 5b. Post-process generate_change_name mode: extract change_name from agent output
+	if mode == "generate_change_name" {
+		changeName := extractChangeName(resp.Output)
+		if changeName != "" {
+			resp.Output = map[string]any{
+				"change_name": changeName,
+			}
+			e.logger.Infow("Extracted change_name from agent output", "change_name", changeName)
+		} else {
+			e.logger.Warnw("Failed to extract change_name from agent output", "output", resp.Output)
+		}
+	}
+
 	// 6. Handle artifact creation (if configured)
 	if nodeDef.Config != nil && nodeDef.Config.Artifact != nil {
 		if err := e.handleArtifact(ctx, flowRun, nodeRun, nodeDef, runtimeCtx, resp.Output); err != nil {
@@ -610,4 +623,75 @@ func (e *FlowExecutor) fetchFileFromGit(ctx context.Context, taskID, filePath st
 	}
 
 	return string(output), nil
+}
+
+// extractChangeName extracts a change_name slug from agent output.
+// It handles multiple output formats:
+// 1. Direct: {"change_name": "xxx"}
+// 2. Raw Claude output: {"raw": true, "result": "{...\"result\":\"xxx\"...}"}
+// 3. Plain text slug in result field
+func extractChangeName(output map[string]any) string {
+	// 1. Direct change_name field
+	if cn, ok := output["change_name"]; ok {
+		if s, ok := cn.(string); ok && s != "" {
+			return sanitizeSlug(s)
+		}
+	}
+
+	// 2. Try to extract from raw Claude CLI output
+	if rawResult, ok := output["result"]; ok {
+		resultStr, ok := rawResult.(string)
+		if !ok {
+			return ""
+		}
+
+		// Try parsing as Claude CLI JSON (nested {"type":"result","result":"..."})
+		var cliOutput struct {
+			Result string `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(resultStr), &cliOutput); err == nil && cliOutput.Result != "" {
+			resultStr = cliOutput.Result
+		}
+
+		// Try parsing the result as JSON with change_name field
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(resultStr), &parsed); err == nil {
+			if cn, ok := parsed["change_name"]; ok {
+				if s, ok := cn.(string); ok && s != "" {
+					return sanitizeSlug(s)
+				}
+			}
+		}
+
+		// Fallback: treat the entire result as a plain text slug
+		slug := sanitizeSlug(strings.TrimSpace(resultStr))
+		if slug != "" && len(slug) <= 50 && !strings.Contains(slug, " ") {
+			return slug
+		}
+	}
+
+	return ""
+}
+
+// sanitizeSlug cleans a string to be a valid branch-name slug
+func sanitizeSlug(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "\"'`")
+	s = strings.ToLower(s)
+	// Keep only alphanumeric and hyphens
+	var result strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			result.WriteRune(r)
+		} else if r == ' ' || r == '_' {
+			result.WriteRune('-')
+		}
+	}
+	slug := result.String()
+	// Clean up consecutive hyphens
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	slug = strings.Trim(slug, "-")
+	return slug
 }

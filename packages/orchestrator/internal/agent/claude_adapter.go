@@ -96,6 +96,12 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 		env["GIT_ACCESS_TOKEN"] = req.GitAccessToken
 	}
 
+	// Skip Git operations for generate_change_name mode
+	if req.Mode == "generate_change_name" {
+		env["GIT_REPO_URL"] = ""
+		env["GIT_CREATE_PR"] = "false"
+	}
+
 	// Model selection
 	if a.model != "" {
 		env["CLAUDE_MODEL"] = a.model

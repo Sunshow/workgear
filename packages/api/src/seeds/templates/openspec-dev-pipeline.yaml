@@ -5,7 +5,6 @@ description: "基于 OpenSpec 的 Spec 驱动开发流水线：需求 → Spec �
 variables:
   project_id: ""
   requirement_text: ""
-  change_name: ""
 
 nodes:
   # ─── 阶段 1：提交需求 ───
@@ -18,10 +17,27 @@ nodes:
           type: textarea
           label: "需求描述"
           required: true
-        - field: change_name
-          type: text
-          label: "变更名称（英文，如 add-dark-mode）"
-          required: true
+
+  # ─── 阶段 1.5：自动生成变更名称 ───
+  - id: generate_change_name
+    name: "生成变更名称"
+    type: agent_task
+    agent:
+      role: "spec-architect"
+      model: "{{params.model}}"
+    config:
+      mode: generate_change_name
+      prompt_template: |
+        根据以下需求描述，生成一个简短的英文变更名称（slug 格式，用连字符分隔，如 add-dark-mode、fix-login-bug）。
+
+        需求描述：{{nodes.submit_requirement.outputs.requirement_text}}
+
+        要求：
+        - 只输出变更名称，不要其他内容
+        - 全小写，单词用连字符分隔
+        - 简洁准确，不超过5个单词
+        - 不要包含 feat/fix 等前缀
+    timeout: 30s
 
   # ─── 阶段 2：Agent 生成 Spec ───
   - id: generate_spec
@@ -33,7 +49,7 @@ nodes:
     config:
       mode: opsx_plan
       opsx:
-        change_name: "{{nodes.submit_requirement.outputs.change_name}}"
+        change_name: "{{nodes.generate_change_name.outputs.change_name}}"
         schema: "{{params.spec_schema}}"
         init_if_missing: true
       prompt_template: |
@@ -42,7 +58,7 @@ nodes:
         需求描述：{{nodes.submit_requirement.outputs.requirement_text}}
 
         你需要：
-        1. 创建 OpenSpec change: {{nodes.submit_requirement.outputs.change_name}}
+        1. 创建 OpenSpec change: {{nodes.generate_change_name.outputs.change_name}}
         2. 生成 proposal.md（为什么做、做什么、影响范围）
         3. 生成 delta specs：
            - 目录结构镜像 openspec/specs/ 的模块分类
@@ -52,7 +68,7 @@ nodes:
         4. 生成 design.md（技术方案、数据流、文件变更清单）
         5. 生成 tasks.md（按模块分组的实施任务清单，使用 [ ] 复选框格式）
 
-        请确保所有文件保存到 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/ 目录下。
+        请确保所有文件保存到 openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/ 目录下。
     timeout: 600s
     retry:
       max_attempts: 2
@@ -66,10 +82,10 @@ nodes:
       review_target: "{{nodes.generate_spec.outputs}}"
       show_artifacts: true
       artifact_paths:
-        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/proposal.md"
-        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/"
-        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/design.md"
-        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/tasks.md"
+        - "openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/proposal.md"
+        - "openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/specs/"
+        - "openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/design.md"
+        - "openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/tasks.md"
       actions: ["approve", "reject", "edit"]
       timeout: 24h
     on_reject:
@@ -88,21 +104,21 @@ nodes:
     config:
       mode: opsx_apply
       opsx:
-        change_name: "{{nodes.submit_requirement.outputs.change_name}}"
+        change_name: "{{nodes.generate_change_name.outputs.change_name}}"
       prompt_template: |
         请按照 OpenSpec 的 tasks.md 实施所有任务。
 
-        变更名称：{{nodes.submit_requirement.outputs.change_name}}
+        变更名称：{{nodes.generate_change_name.outputs.change_name}}
 
         要求：
-        1. 读取 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/tasks.md
-        2. 读取 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/design.md
-        3. 参考 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/ 中的场景定义
+        1. 读取 openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/tasks.md
+        2. 读取 openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/design.md
+        3. 参考 openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/specs/ 中的场景定义
         4. 逐项实施，完成后在 tasks.md 中打勾 [x]
         5. 确保代码符合 design.md 中的技术方案
       git:
         create_branch: true
-        branch_pattern: "feat/{{nodes.submit_requirement.outputs.change_name}}"
+        branch_pattern: "feat/{{nodes.generate_change_name.outputs.change_name}}"
         auto_commit: true
     timeout: 1200s
 
@@ -118,8 +134,8 @@ nodes:
       prompt_template: |
         请 Review 以下代码变更，对照 OpenSpec 的 specs 和 design 文档：
 
-        变更名称：{{nodes.submit_requirement.outputs.change_name}}
-        Spec 文档目录：openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/
+        变更名称：{{nodes.generate_change_name.outputs.change_name}}
+        Spec 文档目录：openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/
 
         检查维度：
         1. 完整性：所有 tasks.md 中的任务是否都已实施
@@ -136,7 +152,7 @@ nodes:
       review_target: "{{nodes.code_review.outputs}}"
       show_artifacts: true
       artifact_paths:
-        - "openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/"
+        - "openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/"
       actions: ["approve", "reject"]
       timeout: 24h
     on_reject:
@@ -155,23 +171,25 @@ nodes:
     config:
       mode: opsx_plan
       opsx:
-        change_name: "{{nodes.submit_requirement.outputs.change_name}}"
+        change_name: "{{nodes.generate_change_name.outputs.change_name}}"
         action: archive
       prompt_template: |
-        请归档已完成的 OpenSpec 变更：{{nodes.submit_requirement.outputs.change_name}}
+        请归档已完成的 OpenSpec 变更：{{nodes.generate_change_name.outputs.change_name}}
 
         操作步骤：
-        1. 读取 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/ 下的所有 delta spec 文件
+        1. 读取 openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/specs/ 下的所有 delta spec 文件
         2. 按照目录结构和文件前缀处理：
            - ADDED-* 文件：去掉 ADDED- 前缀，复制到 openspec/specs/ 对应目录
            - MODIFIED-* 文件：去掉 MODIFIED- 前缀，覆盖 openspec/specs/ 对应文件
            - REMOVED-* 文件：删除 openspec/specs/ 对应文件（文件名去掉 REMOVED- 前缀）
-        3. 将 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/ 移动到 openspec/changes/archive/
+        3. 将 openspec/changes/{{nodes.generate_change_name.outputs.change_name}}/ 移动到 openspec/changes/archive/
         4. 确保 openspec/specs/ 中的内容是最新的完整规范
     timeout: 300s
 
 edges:
   - from: submit_requirement
+    to: generate_change_name
+  - from: generate_change_name
     to: generate_spec
   - from: generate_spec
     to: review_spec
