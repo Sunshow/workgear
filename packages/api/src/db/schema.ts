@@ -199,6 +199,7 @@ export const artifacts = pgTable('artifacts', {
   taskId: uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
   type: varchar('type', { length: 50 }).notNull(),
   title: varchar('title', { length: 500 }).notNull(),
+  filePath: text('file_path'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 

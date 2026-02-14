@@ -172,6 +172,7 @@ export interface Artifact {
   taskId: string
   type: string
   title: string
+  filePath: string | null
   createdAt: string
 }
 

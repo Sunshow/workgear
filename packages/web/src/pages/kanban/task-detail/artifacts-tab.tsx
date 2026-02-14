@@ -13,6 +13,10 @@ const typeLabels: Record<string, string> = {
   prd: 'PRD',
   user_story: 'User Story',
   code: '代码',
+  proposal: 'Proposal',
+  design: 'Design',
+  tasks: 'Tasks',
+  spec: 'Spec',
 }
 
 export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
@@ -89,6 +93,11 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
               {typeLabels[artifact.type] || artifact.type}
             </Badge>
             <span className="flex-1 text-sm">{artifact.title}</span>
+            {artifact.filePath && (
+              <span className="text-xs text-muted-foreground truncate max-w-[150px]" title={artifact.filePath}>
+                {artifact.filePath.split('/').pop()}
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">
               {new Date(artifact.createdAt).toLocaleDateString('zh-CN')}
             </span>

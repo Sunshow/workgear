@@ -36,9 +36,18 @@ type OpsxConfig struct {
 
 // AgentResponse represents the response from an agent
 type AgentResponse struct {
-	Output      map[string]any    `json:"output"`
-	Metrics     *ExecutionMetrics `json:"metrics,omitempty"`
-	GitMetadata *GitMetadata      `json:"git_metadata,omitempty"`
+	Output        map[string]any    `json:"output"`
+	Metrics       *ExecutionMetrics `json:"metrics,omitempty"`
+	GitMetadata   *GitMetadata      `json:"git_metadata,omitempty"`
+	ArtifactFiles []ArtifactFile    `json:"artifact_files,omitempty"` // 新增：产物文件列表
+}
+
+// ArtifactFile represents a single artifact file to be created
+type ArtifactFile struct {
+	Path    string `json:"path"`    // 相对路径，如 "openspec/changes/xxx/proposal.md"
+	Type    string `json:"type"`    // artifact 类型：spec, design, tasks, proposal
+	Title   string `json:"title"`   // 显示标题
+	Content string `json:"content"` // 文件内容（可选，如果为空则后续从 Git 读取）
 }
 
 // GitMetadata holds Git operation results from agent execution

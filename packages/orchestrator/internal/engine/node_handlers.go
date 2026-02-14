@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/sunshow/workgear/orchestrator/internal/agent"
 	"github.com/sunshow/workgear/orchestrator/internal/db"
@@ -138,6 +141,21 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		if err := e.handleArtifact(ctx, flowRun, nodeRun, nodeDef, runtimeCtx, resp.Output); err != nil {
 			e.logger.Warnw("Failed to create artifact", "error", err, "node_id", nodeRun.NodeID)
 			// Non-fatal: don't block flow execution
+		}
+	}
+
+	// 6b. Handle OpenSpec artifact files (extract from Git changed files)
+	if nodeDef.Config != nil && nodeDef.Config.Opsx != nil && resp.GitMetadata != nil && len(resp.GitMetadata.ChangedFiles) > 0 {
+		changeName := nodeDef.Config.Opsx.ChangeName
+		if rendered, err := RenderTemplate(changeName, runtimeCtx); err == nil && rendered != "" {
+			changeName = rendered
+		}
+		artifactFiles := extractOpenSpecArtifacts(changeName, resp.GitMetadata.ChangedFiles)
+		if len(artifactFiles) > 0 {
+			if err := e.handleArtifactFiles(ctx, flowRun, nodeRun, artifactFiles); err != nil {
+				e.logger.Warnw("Failed to create OpenSpec artifacts", "error", err, "node_id", nodeRun.NodeID)
+				// Non-fatal: don't block flow execution
+			}
 		}
 	}
 
@@ -365,7 +383,7 @@ func (e *FlowExecutor) handleArtifact(ctx context.Context, flowRun *db.FlowRun, 
 	}
 
 	// Create artifact
-	artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, artifactCfg.Type, title)
+	artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, artifactCfg.Type, title, "")
 	if err != nil {
 		return fmt.Errorf("create artifact: %w", err)
 	}
@@ -471,4 +489,125 @@ func (e *FlowExecutor) updateTaskGitInfo(ctx context.Context, taskID, flowRunID,
 	}
 
 	return nil
+}
+
+// extractOpenSpecArtifacts extracts artifact file info from OpenSpec changed files
+func extractOpenSpecArtifacts(changeName string, changedFiles []string) []agent.ArtifactFile {
+	prefix := fmt.Sprintf("openspec/changes/%s/", changeName)
+	var artifacts []agent.ArtifactFile
+
+	for _, file := range changedFiles {
+		if !strings.HasPrefix(file, prefix) {
+			continue
+		}
+
+		relativePath := strings.TrimPrefix(file, prefix)
+		var artifactType, title string
+
+		switch {
+		case relativePath == "proposal.md":
+			artifactType = "proposal"
+			title = "Proposal"
+		case relativePath == "design.md":
+			artifactType = "design"
+			title = "Design"
+		case relativePath == "tasks.md":
+			artifactType = "tasks"
+			title = "Tasks"
+		case strings.HasPrefix(relativePath, "specs/"):
+			artifactType = "spec"
+			title = strings.TrimPrefix(relativePath, "specs/")
+		default:
+			continue
+		}
+
+		artifacts = append(artifacts, agent.ArtifactFile{
+			Path:  file,
+			Type:  artifactType,
+			Title: title,
+		})
+	}
+
+	return artifacts
+}
+
+// handleArtifactFiles creates multiple artifact records from agent output
+func (e *FlowExecutor) handleArtifactFiles(ctx context.Context, flowRun *db.FlowRun, nodeRun *db.NodeRun, files []agent.ArtifactFile) error {
+	for _, file := range files {
+		// 如果 Content 为空，从 Git 读取
+		content := file.Content
+		if content == "" {
+			var err error
+			content, err = e.fetchFileFromGit(ctx, flowRun.TaskID, file.Path)
+			if err != nil {
+				e.logger.Warnw("Failed to fetch file from git", "path", file.Path, "error", err)
+				continue
+			}
+		}
+
+		// Create artifact
+		artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, file.Type, file.Title, file.Path)
+		if err != nil {
+			e.logger.Errorw("Failed to create artifact", "error", err, "path", file.Path)
+			continue
+		}
+
+		// Create initial version
+		if err := e.db.CreateArtifactVersion(ctx, artifactID, 1, content, "Initial version from OpenSpec", "agent"); err != nil {
+			e.logger.Errorw("Failed to create artifact version", "error", err, "artifact_id", artifactID)
+			continue
+		}
+
+		e.logger.Infow("Created artifact from file",
+			"artifact_id", artifactID,
+			"type", file.Type,
+			"title", file.Title,
+			"path", file.Path,
+		)
+
+		// Record timeline event
+		e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, "artifact_created", map[string]any{
+			"artifact_id": artifactID,
+			"type":        file.Type,
+			"title":       file.Title,
+			"path":        file.Path,
+			"message":     fmt.Sprintf("创建产物：%s", file.Title),
+		})
+	}
+
+	return nil
+}
+
+// fetchFileFromGit reads a file from the task's git repository
+func (e *FlowExecutor) fetchFileFromGit(ctx context.Context, taskID, filePath string) (string, error) {
+	repoURL, branch, err := e.db.GetTaskGitInfo(ctx, taskID)
+	if err != nil {
+		return "", fmt.Errorf("get git info: %w", err)
+	}
+	if repoURL == "" || branch == "" {
+		return "", fmt.Errorf("task has no git info")
+	}
+
+	// 使用 git show 命令读取文件内容
+	tmpDir, err := os.MkdirTemp("", "workgear-git-")
+	if err != nil {
+		return "", fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Clone with depth 1
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--branch", branch, "--no-checkout", repoURL, tmpDir)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git clone: %w", err)
+	}
+
+	// Show file content
+	cmd = exec.CommandContext(ctx, "git", "show", fmt.Sprintf("HEAD:%s", filePath))
+	cmd.Dir = tmpDir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git show: %w", err)
+	}
+
+	return string(output), nil
 }
