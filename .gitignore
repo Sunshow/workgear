@@ -48,3 +48,4 @@ vendor/
 tmp/
 temp/
 packages/orchestrator/server
+packages/orchestrator/bin/*
