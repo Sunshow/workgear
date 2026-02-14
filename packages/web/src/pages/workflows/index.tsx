@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { Plus, FileCode, Trash2, Pencil } from 'lucide-react'
+import { ArrowLeft, Plus, FileCode, Trash2, Pencil } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project, Workflow, WorkflowTemplate } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -69,9 +69,18 @@ export function WorkflowsPage() {
     <div className="flex h-full flex-col">
       <div className="border-b bg-background px-6 py-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{project?.name} - 流程管理</h1>
-            <p className="text-sm text-muted-foreground">管理项目的工作流程</p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate(`/projects/${projectId}/kanban`)}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">{project?.name} - 流程管理</h1>
+              <p className="text-sm text-muted-foreground">管理项目的工作流程</p>
+            </div>
           </div>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />

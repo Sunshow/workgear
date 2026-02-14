@@ -198,3 +198,33 @@
   - 'Review' (position 2)
   - 'Done' (position 3)
 - Columns are stored in kanban_columns table with unique constraint on (kanbanId, position)
+
+---
+
+## Scenario: Navigate from Workflows Page Back to Kanban
+
+### Given
+- User is on the workflows management page /projects/:projectId/workflows
+
+### When
+- User clicks the ArrowLeft back button in the page header
+
+### Then
+- Page navigates to /projects/:projectId/kanban
+- Kanban page loads normally with the project's kanban data
+- Navigation does not depend on browser history (uses explicit route)
+
+---
+
+## Scenario: Back Button Always Visible on Workflows Page
+
+### Given
+- User enters the workflows page /projects/:projectId/workflows via any path
+
+### When
+- Page finishes loading
+
+### Then
+- An ArrowLeft icon button is displayed on the left side of the page header, before the project name
+- Button uses `variant="ghost" size="icon"` styling, consistent with the workflow editor's back button
+- Button is clickable with hover visual feedback
