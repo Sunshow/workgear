@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { eq } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { workflows, workflowTemplates } from '../db/schema.js'
 import { authenticate } from '../middleware/auth.js'
@@ -13,7 +13,10 @@ export async function workflowRoutes(app: FastifyInstance) {
     const result = await db
       .select()
       .from(workflows)
-      .where(eq(workflows.projectId, projectId))
+      .where(and(
+        eq(workflows.projectId, projectId),
+        isNull(workflows.deletedAt)
+      ))
       .orderBy(workflows.createdAt)
     return result
   })
@@ -24,7 +27,10 @@ export async function workflowRoutes(app: FastifyInstance) {
     const result = await db
       .select()
       .from(workflows)
-      .where(eq(workflows.id, id))
+      .where(and(
+        eq(workflows.id, id),
+        isNull(workflows.deletedAt)
+      ))
     if (result.length === 0) {
       return reply.status(404).send({ error: 'Workflow not found' })
     }
@@ -95,7 +101,10 @@ export async function workflowRoutes(app: FastifyInstance) {
         ...(templateParams !== undefined && { templateParams }),
         updatedAt: new Date(),
       })
-      .where(eq(workflows.id, id))
+      .where(and(
+        eq(workflows.id, id),
+        isNull(workflows.deletedAt)
+      ))
       .returning()
 
     if (!updated) {
@@ -104,12 +113,16 @@ export async function workflowRoutes(app: FastifyInstance) {
     return updated
   })
 
-  // 删除流程
+  // 删除流程（软删除）
   app.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const { id } = request.params
     const [deleted] = await db
-      .delete(workflows)
-      .where(eq(workflows.id, id))
+      .update(workflows)
+      .set({ deletedAt: new Date() })
+      .where(and(
+        eq(workflows.id, id),
+        isNull(workflows.deletedAt)
+      ))
       .returning()
     if (!deleted) {
       return reply.status(404).send({ error: 'Workflow not found' })

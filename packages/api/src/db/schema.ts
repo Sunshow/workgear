@@ -124,6 +124,7 @@ export const workflows = pgTable('workflows', {
   templateParams: jsonb('template_params'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
 // ============================================================

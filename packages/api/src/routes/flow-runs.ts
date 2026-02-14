@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, and, isNull } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { flowRuns, nodeRuns, tasks, workflows, timelineEvents, projects } from '../db/schema.js'
 import { parse } from 'yaml'
@@ -25,7 +25,10 @@ export async function flowRunRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Task not found' })
     }
 
-    const [workflow] = await db.select().from(workflows).where(eq(workflows.id, workflowId))
+    const [workflow] = await db.select().from(workflows).where(and(
+      eq(workflows.id, workflowId),
+      isNull(workflows.deletedAt)
+    ))
     if (!workflow) {
       return reply.status(404).send({ error: 'Workflow not found' })
     }
