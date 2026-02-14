@@ -4,49 +4,49 @@
 
 ### 新增 merge_commit_sha 列
 
-- [ ] 在 `schema.ts` 的 `flowRuns` 表定义中新增 `mergeCommitSha: varchar('merge_commit_sha', { length: 100 })` 列 **[S]**
-- [ ] 生成 Drizzle migration 文件：`ALTER TABLE flow_runs ADD COLUMN merge_commit_sha varchar(100)` **[S]**
+- [x] 在 `schema.ts` 的 `flowRuns` 表定义中新增 `mergeCommitSha: varchar('merge_commit_sha', { length: 100 })` 列 **[S]**
+- [x] 生成 Drizzle migration 文件：`ALTER TABLE flow_runs ADD COLUMN merge_commit_sha varchar(100)` **[S]**
 - [ ] 执行 migration 验证列已添加 **[S]**
 
 ## 模块：API 自动合并 (packages/api/src/ws)
 
 ### handleFlowCompletedAutoMerge 写入 merge commit SHA
 
-- [ ] 在 `gateway.ts` 的 `handleFlowCompletedAutoMerge` 中，合并成功后将 `mergeResult.sha` 写入 `flow_runs.merge_commit_sha` **[S]**
-- [ ] 将 `db.update(flowRuns).set({ prMergedAt })` 改为 `.set({ prMergedAt, mergeCommitSha: mergeResult.sha })` **[S]**
-- [ ] 在 `pr_merged` timeline 事件的 content 中新增 `merge_commit_sha` 字段 **[S]**
+- [x] 在 `gateway.ts` 的 `handleFlowCompletedAutoMerge` 中，合并成功后将 `mergeResult.sha` 写入 `flow_runs.merge_commit_sha` **[S]**
+- [x] 将 `db.update(flowRuns).set({ prMergedAt })` 改为 `.set({ prMergedAt, mergeCommitSha: mergeResult.sha })` **[S]**
+- [x] 在 `pr_merged` timeline 事件的 content 中新增 `merge_commit_sha` 字段 **[S]**
 
 ## 模块：API 手动合并路由 (packages/api/src/routes)
 
 ### PUT /flow-runs/:id/merge-pr 写入 merge commit SHA
 
-- [ ] 在 `flow-runs.ts` 的手动 merge 路由中，合并成功后将 `mergeResult.sha` 写入 `flow_runs.merge_commit_sha` **[S]**
-- [ ] 将 `db.update(flowRuns).set({ prMergedAt })` 改为 `.set({ prMergedAt, mergeCommitSha: mergeResult.sha })` **[S]**
-- [ ] 在 `pr_merged` timeline 事件的 content 中新增 `merge_commit_sha` 字段 **[S]**
-- [ ] 修改成功返回值为 `{ merged: true, mergeCommitSha: mergeResult.sha }` **[S]**
+- [x] 在 `flow-runs.ts` 的手动 merge 路由中，合并成功后将 `mergeResult.sha` 写入 `flow_runs.merge_commit_sha` **[S]**
+- [x] 将 `db.update(flowRuns).set({ prMergedAt })` 改为 `.set({ prMergedAt, mergeCommitSha: mergeResult.sha })` **[S]**
+- [x] 在 `pr_merged` timeline 事件的 content 中新增 `merge_commit_sha` 字段 **[S]**
+- [x] 修改成功返回值为 `{ merged: true, mergeCommitSha: mergeResult.sha }` **[S]**
 
 ## 模块：前端类型定义 (packages/web/src/lib)
 
 ### FlowRun 类型扩展
 
-- [ ] 在 `types.ts` 的 `FlowRun` 接口中新增 `mergeCommitSha: string | null` 字段 **[S]**
+- [x] 在 `types.ts` 的 `FlowRun` 接口中新增 `mergeCommitSha: string | null` 字段 **[S]**
 
 ## 模块：前端 Git Tab (packages/web/src/pages/kanban/task-detail)
 
 ### PR 区域展示 merge commit
 
-- [ ] 在 `git-tab.tsx` PR 区域的合并时间戳下方，新增 merge commit 短 hash 展示 **[S]**
-- [ ] 有 repoUrl 时渲染为 `<a>` 链接，指向 `{repoUrl}/commit/{mergeCommitSha}` **[S]**
-- [ ] 无 repoUrl 时渲染为纯文本 `<code>` **[S]**
-- [ ] `mergeCommitSha` 为 null 时不渲染（历史数据优雅降级） **[S]**
+- [x] 在 `git-tab.tsx` PR 区域的合并时间戳下方，新增 merge commit 短 hash 展示 **[S]**
+- [x] 有 repoUrl 时渲染为 `<a>` 链接，指向 `{repoUrl}/commit/{mergeCommitSha}` **[S]**
+- [x] 无 repoUrl 时渲染为纯文本 `<code>` **[S]**
+- [x] `mergeCommitSha` 为 null 时不渲染（历史数据优雅降级） **[S]**
 
 ### 提交记录列表追加 merge commit
 
-- [ ] 在提交记录列表末尾，当 `flowRun.mergeCommitSha` 存在时追加 merge commit 条目 **[M]**
-- [ ] 条目使用 `GitMerge` 图标（紫色）区分普通 commit **[S]**
-- [ ] 条目 message 显示为 `Merge PR #{prNumber}` **[S]**
-- [ ] 条目与普通 commits 之间有视觉分隔（`bg-muted/20 border-t-2`） **[S]**
-- [ ] 短 hash 可点击跳转（复用 `buildCommitUrl` 函数） **[S]**
+- [x] 在提交记录列表末尾，当 `flowRun.mergeCommitSha` 存在时追加 merge commit 条目 **[M]**
+- [x] 条目使用 `GitMerge` 图标（紫色）区分普通 commit **[S]**
+- [x] 条目 message 显示为 `Merge PR #{prNumber}` **[S]**
+- [x] 条目与普通 commits 之间有视觉分隔（`bg-muted/20 border-t-2`） **[S]**
+- [x] 短 hash 可点击跳转（复用 `buildCommitUrl` 函数） **[S]**
 
 ## 测试验证
 

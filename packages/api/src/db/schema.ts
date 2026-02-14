@@ -142,6 +142,7 @@ export const flowRuns = pgTable('flow_runs', {
   prUrl: varchar('pr_url', { length: 500 }),
   prNumber: integer('pr_number'),
   prMergedAt: timestamp('pr_merged_at', { withTimezone: true }),
+  mergeCommitSha: varchar('merge_commit_sha', { length: 100 }),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

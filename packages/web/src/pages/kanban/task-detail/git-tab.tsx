@@ -220,9 +220,23 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
                   )}
                 </div>
                 {prMerged && flowRun.prMergedAt && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {new Date(flowRun.prMergedAt).toLocaleString('zh-CN')}
-                  </p>
+                  <div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {new Date(flowRun.prMergedAt).toLocaleString('zh-CN')}
+                    </p>
+                    {flowRun.mergeCommitSha && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <GitCommit className="h-3 w-3 text-muted-foreground" />
+                        {repoUrl ? (
+                          <a href={`${repoUrl}/commit/${flowRun.mergeCommitSha}`} target="_blank" rel="noopener noreferrer">
+                            <code className="text-xs text-blue-600 hover:underline">{flowRun.mergeCommitSha.slice(0, 7)}</code>
+                          </a>
+                        ) : (
+                          <code className="text-xs text-muted-foreground">{flowRun.mergeCommitSha.slice(0, 7)}</code>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
               {flowRun.prUrl && (
@@ -311,6 +325,20 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
                 </div>
               )
             })}
+            {/* Merge commit entry */}
+            {flowRun?.mergeCommitSha && flowRun.prMergedAt && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted/20 border-t-2">
+                <GitMerge className="h-3 w-3 text-purple-500 shrink-0" />
+                {buildCommitUrl(flowRun.mergeCommitSha) ? (
+                  <a href={buildCommitUrl(flowRun.mergeCommitSha)!} target="_blank" rel="noopener noreferrer">
+                    <code className="text-xs text-blue-600 hover:underline shrink-0">{flowRun.mergeCommitSha.slice(0, 7)}</code>
+                  </a>
+                ) : (
+                  <code className="text-xs text-muted-foreground shrink-0">{flowRun.mergeCommitSha.slice(0, 7)}</code>
+                )}
+                <span className="text-sm truncate text-muted-foreground">Merge PR #{flowRun.prNumber}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
