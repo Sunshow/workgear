@@ -166,3 +166,34 @@ export function useFlowRunEvents(flowRunId: string | null | undefined, handlers:
     }
   }, [channel]))
 }
+
+/**
+ * Log stream event from node execution
+ */
+export interface LogStreamEvent {
+  type: 'assistant' | 'tool_use' | 'result' | string
+  content?: string
+  tool_name?: string
+  tool_input?: Record<string, any>
+  timestamp: number
+}
+
+/**
+ * Hook to subscribe to real-time log stream from a node run
+ */
+export function useNodeLogStream(
+  nodeRunId: string | undefined,
+  onLogEvent: (event: LogStreamEvent) => void
+) {
+  const handlerRef = useRef(onLogEvent)
+  handlerRef.current = onLogEvent
+
+  const channel = nodeRunId ? `node-run:${nodeRunId}` : ''
+
+  useWebSocket(channel || '__noop__', useCallback((event: WSEvent) => {
+    if (!channel || event.type !== 'node.log_stream') return
+    if (event.data) {
+      handlerRef.current(event.data as unknown as LogStreamEvent)
+    }
+  }, [channel]))
+}

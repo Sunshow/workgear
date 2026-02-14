@@ -110,6 +110,22 @@ export async function nodeRunRoutes(app: FastifyInstance) {
     }
   })
 
+  // Get node run log stream (for real-time and historical log viewing)
+  app.get<{ Params: { id: string } }>('/:id/logs', async (request, reply) => {
+    const { id } = request.params
+
+    const [nodeRun] = await db
+      .select({ logStream: nodeRuns.logStream })
+      .from(nodeRuns)
+      .where(eq(nodeRuns.id, id))
+
+    if (!nodeRun) {
+      return reply.status(404).send({ error: 'NodeRun not found' })
+    }
+
+    return { logs: nodeRun.logStream || [] }
+  })
+
   // Retry a failed node
   app.post<{ Params: { id: string } }>('/:id/retry', async (request, reply) => {
     const { id } = request.params

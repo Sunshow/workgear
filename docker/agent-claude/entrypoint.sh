@@ -69,18 +69,38 @@ if [ -n "$CLAUDE_MODEL" ]; then
     CLAUDE_ARGS="$CLAUDE_ARGS --model $CLAUDE_MODEL"
 fi
 
-# Add output format
-CLAUDE_ARGS="$CLAUDE_ARGS --output-format json"
+# Add output format (stream-json for real-time log streaming)
+CLAUDE_ARGS="$CLAUDE_ARGS --output-format stream-json --verbose"
 
-# Execute claude with the prompt (stdout → result file, stderr → log)
-$CLAUDE_CMD $CLAUDE_ARGS "$AGENT_PROMPT" > "$RESULT_FILE" 2>/tmp/claude_stderr.log || {
-    EXIT_CODE=$?
+# Execute claude with stream-json output
+# Each line is a JSON event; we forward to stderr for Docker logs real-time reading
+# and extract the final "result" event for structured parsing
+$CLAUDE_CMD $CLAUDE_ARGS "$AGENT_PROMPT" 2>/tmp/claude_stderr.log | while IFS= read -r line; do
+    # Forward every line to stderr so Docker logs can stream it in real-time
+    echo "$line" >&2
+
+    # Parse JSON type field, save the last "result" event
+    TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
+    if [ "$TYPE" = "result" ]; then
+        echo "$line" > "$RESULT_FILE"
+    fi
+done
+
+# Check pipeline exit status
+PIPE_STATUS=${PIPESTATUS[0]}
+if [ "$PIPE_STATUS" != "0" ]; then
+    EXIT_CODE=$PIPE_STATUS
     echo "[agent] Claude CLI exited with code $EXIT_CODE"
-    cat /tmp/claude_stderr.log
-    # Output error as JSON to the real stdout (fd 3)
-    echo "{\"error\": \"claude exited with code $EXIT_CODE\", \"stderr\": \"$(cat /tmp/claude_stderr.log | head -c 2000 | sed 's/"/\\"/g')\"}" >&3
+    cat /tmp/claude_stderr.log 2>/dev/null
+    echo "{\"error\": \"claude exited with code $EXIT_CODE\", \"stderr\": \"$(cat /tmp/claude_stderr.log 2>/dev/null | head -c 2000 | sed 's/"/\\"/g')\"}" >&3
     exit $EXIT_CODE
-}
+fi
+
+# Verify we got a result
+if [ ! -f "$RESULT_FILE" ]; then
+    echo "[agent] Warning: No result event received from Claude CLI"
+    echo '{"error": "No result event", "summary": "Agent execution completed but no result was produced."}' > "$RESULT_FILE"
+fi
 
 echo "[agent] Claude CLI completed successfully."
 

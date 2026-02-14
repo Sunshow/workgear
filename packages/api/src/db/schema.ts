@@ -172,6 +172,7 @@ export const nodeRuns = pgTable('node_runs', {
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   recoveryCheckpoint: jsonb('recovery_checkpoint'),
+  logStream: jsonb('log_stream'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('idx_node_runs_flow_run_id').on(table.flowRunId),

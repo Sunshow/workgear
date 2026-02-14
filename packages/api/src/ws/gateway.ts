@@ -95,6 +95,11 @@ export function startEventForwarding(logger: { info: (...args: any[]) => void; e
           broadcast(`flow-run:${event.flowRunId}`, wsEvent)
         }
 
+        // Broadcast to node-run specific channel (for log streaming)
+        if (event.nodeRunId) {
+          broadcast(`node-run:${event.nodeRunId}`, wsEvent)
+        }
+
         // Also broadcast to event-type channel
         broadcast(`event:${event.eventType}`, wsEvent)
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -16,11 +17,39 @@ import (
 	"go.uber.org/zap"
 )
 
+// ClaudeStreamEvent represents a single event from Claude CLI stream-json output
+type ClaudeStreamEvent struct {
+	Type      string         `json:"type"`                // "system", "assistant", "user", "result"
+	Subtype   string         `json:"subtype,omitempty"`   // "init", "success", etc.
+	Message   *StreamMessage `json:"message,omitempty"`   // Message content (for assistant/user types)
+	Result    any            `json:"result,omitempty"`    // Final result (for result type)
+	SessionID string         `json:"session_id,omitempty"`
+	Timestamp int64          `json:"timestamp"` // Unix milliseconds (added by us)
+}
+
+// StreamMessage represents the message field in assistant/user events
+type StreamMessage struct {
+	Role    string         `json:"role,omitempty"`
+	Content []ContentBlock `json:"content,omitempty"`
+}
+
+// ContentBlock represents a single content block within a message
+type ContentBlock struct {
+	Type      string         `json:"type"`                  // "text", "tool_use", "tool_result"
+	Text      string         `json:"text,omitempty"`        // For "text" type
+	ID        string         `json:"id,omitempty"`          // For "tool_use" type
+	Name      string         `json:"name,omitempty"`        // For "tool_use" type
+	Input     map[string]any `json:"input,omitempty"`       // For "tool_use" type
+	ToolUseID string         `json:"tool_use_id,omitempty"` // For "tool_result" type
+	Content   any            `json:"content,omitempty"`     // For "tool_result" type (string or array)
+}
+
 // DockerExecutor runs agent tasks inside Docker containers
 type DockerExecutor struct {
 	cli          *client.Client
 	defaultImage string
 	logger       *zap.SugaredLogger
+	onLogEvent   func(event ClaudeStreamEvent) // Callback for real-time log events
 }
 
 // NewDockerExecutor creates a new Docker executor
@@ -118,7 +147,16 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 
 	e.logger.Infow("Started agent container", "container_id", containerID[:12])
 
-	// 4. Wait for completion
+	// 4. Start real-time log streaming (goroutine reads logs as they arrive)
+	logStreamDone := make(chan struct{})
+	go func() {
+		defer close(logStreamDone)
+		if err := e.streamLogs(execCtx, containerID); err != nil {
+			e.logger.Debugw("Log stream ended", "error", err)
+		}
+	}()
+
+	// 5. Wait for completion
 	statusCh, errCh := e.cli.ContainerWait(execCtx, containerID, container.WaitConditionNotRunning)
 
 	var exitCode int
@@ -140,13 +178,16 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 		return nil, fmt.Errorf("container execution timed out after %s", timeout)
 	}
 
-	// 5. Collect logs
+	// 6. Wait for log stream to finish (ensure all logs are processed)
+	<-logStreamDone
+
+	// 7. Collect logs (final stdout/stderr for result parsing)
 	stdout, stderr, err := e.collectLogs(ctx, containerID)
 	if err != nil {
 		return nil, fmt.Errorf("collect logs: %w", err)
 	}
 
-	// 6. Extract git metadata from container (before cleanup)
+	// 8. Extract git metadata from container (before cleanup)
 	gitMetadata := e.extractGitMetadata(ctx, containerID)
 
 	e.logger.Infow("Agent container finished",
@@ -163,6 +204,92 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 		Stderr:      stderr,
 		GitMetadata: gitMetadata,
 	}, nil
+}
+
+// SetLogEventCallback sets the callback for real-time log events
+func (e *DockerExecutor) SetLogEventCallback(callback func(ClaudeStreamEvent)) {
+	e.onLogEvent = callback
+}
+
+// streamLogs reads container logs in real-time and parses stream-json events
+func (e *DockerExecutor) streamLogs(ctx context.Context, containerID string) error {
+	logReader, err := e.cli.ContainerLogs(ctx, containerID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true, // Real-time streaming
+		Timestamps: false,
+	})
+	if err != nil {
+		return err
+	}
+	defer logReader.Close()
+
+	// Use io.Pipe to demultiplex Docker's multiplexed stream format
+	// entrypoint.sh redirects stream-json output to stderr, so we read from stderrWriter
+	stderrReader, stderrWriter := io.Pipe()
+
+	// Demultiplex in a goroutine: stdout goes to discard, stderr goes to pipe
+	go func() {
+		_, _ = stdcopy.StdCopy(io.Discard, stderrWriter, logReader)
+		stderrWriter.Close()
+	}()
+
+	// Read stderr line by line (where stream-json events are written)
+	scanner := bufio.NewScanner(stderrReader)
+	// Increase buffer size for potentially large JSON lines
+	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Debug: print raw line (truncate to avoid log flooding)
+		if len(line) > 500 {
+			e.logger.Debugw("Raw stderr line (truncated)", "line", line[:500]+"...")
+		} else {
+			e.logger.Debugw("Raw stderr line", "line", line)
+		}
+
+		// Try to parse as Claude stream-json event
+		var event ClaudeStreamEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			// Not a JSON line (e.g., [agent] logs)
+			e.logger.Debugw("Not a valid stream-json event", "error", err.Error())
+			continue
+		}
+
+		// Skip events without a type
+		if event.Type == "" {
+			truncated := line
+			if len(truncated) > 200 {
+				truncated = truncated[:200]
+			}
+			e.logger.Debugw("Skipping event with empty type", "raw", truncated)
+			continue
+		}
+
+		// Add timestamp
+		event.Timestamp = time.Now().UnixMilli()
+
+		// Log parsed event
+		contentBlockCount := 0
+		if event.Message != nil {
+			contentBlockCount = len(event.Message.Content)
+		}
+		e.logger.Infow("Parsed stream event",
+			"type", event.Type,
+			"subtype", event.Subtype,
+			"content_blocks", contentBlockCount,
+			"has_result", event.Result != nil,
+		)
+
+		// Trigger callback
+		if e.onLogEvent != nil {
+			e.onLogEvent(event)
+		} else {
+			e.logger.Warnw("Log event callback not set, event dropped")
+		}
+	}
+
+	return scanner.Err()
 }
 
 // ensureImage checks if the image exists locally, pulls if not

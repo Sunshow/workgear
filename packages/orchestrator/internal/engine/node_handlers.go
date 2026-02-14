@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/sunshow/workgear/orchestrator/internal/agent"
 	"github.com/sunshow/workgear/orchestrator/internal/db"
@@ -160,9 +161,87 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		"git_branch", gitBranch,
 	)
 
+	// 5a. Inject real-time log streaming callback
+	var logEvents []map[string]any
+	var logMutex sync.Mutex
+
+	if combinedAdapter, ok := adapter.(*agent.CombinedAdapter); ok {
+		if dockerExec, ok := combinedAdapter.Executor().(*agent.DockerExecutor); ok {
+			dockerExec.SetLogEventCallback(func(event agent.ClaudeStreamEvent) {
+				// Skip system/init events
+				if event.Type == "system" {
+					return
+				}
+
+				// Flatten nested structure into frontend-friendly events
+				if event.Message != nil {
+					for _, block := range event.Message.Content {
+						flatEvent := map[string]any{
+							"timestamp": event.Timestamp,
+						}
+						
+						switch block.Type {
+						case "text":
+							flatEvent["type"] = "assistant"
+							flatEvent["content"] = block.Text
+						case "tool_use":
+							flatEvent["type"] = "tool_use"
+							flatEvent["tool_name"] = block.Name
+							flatEvent["tool_input"] = block.Input
+						case "tool_result":
+							flatEvent["type"] = "tool_result"
+							flatEvent["content"] = fmt.Sprintf("%v", block.Content)
+							flatEvent["tool_use_id"] = block.ToolUseID
+						default:
+							flatEvent["type"] = block.Type
+							flatEvent["content"] = fmt.Sprintf("%v", block)
+						}
+
+						// Real-time push via event bus
+						e.publishEvent(nodeRun.FlowRunID, nodeRun.ID, nodeRun.NodeID, "node.log_stream", flatEvent)
+
+						// Collect for persistence
+						logMutex.Lock()
+						logEvents = append(logEvents, flatEvent)
+						logMutex.Unlock()
+					}
+					return
+				}
+
+				// Handle result event
+				if event.Type == "result" {
+					flatEvent := map[string]any{
+						"type":      "result",
+						"timestamp": event.Timestamp,
+						"subtype":   event.Subtype,
+						"result":    event.Result,
+					}
+					e.publishEvent(nodeRun.FlowRunID, nodeRun.ID, nodeRun.NodeID, "node.log_stream", flatEvent)
+					logMutex.Lock()
+					logEvents = append(logEvents, flatEvent)
+					logMutex.Unlock()
+				}
+			})
+		}
+	}
+
 	resp, err := adapter.Execute(ctx, agentReq)
 	if err != nil {
+		// Persist logs even on failure
+		if len(logEvents) > 0 {
+			if dbErr := e.db.UpdateNodeRunLogStream(ctx, nodeRun.ID, logEvents); dbErr != nil {
+				e.logger.Warnw("Failed to save log stream on error", "error", dbErr)
+			}
+		}
 		return fmt.Errorf("agent execution failed: %w", err)
+	}
+
+	// 5a-2. Persist log stream to database
+	if len(logEvents) > 0 {
+		if dbErr := e.db.UpdateNodeRunLogStream(ctx, nodeRun.ID, logEvents); dbErr != nil {
+			e.logger.Warnw("Failed to save log stream", "error", dbErr)
+			// Non-fatal: don't block flow execution
+		}
 	}
 
 	// 5b. Post-process generate_change_name mode: extract change_name from agent output

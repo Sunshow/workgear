@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { useFlowRunEvents } from '@/hooks/use-websocket'
-import { XCircle, CheckCircle, RotateCcw, Clock, Play, AlertCircle, Pencil, Loader2 } from 'lucide-react'
+import { XCircle, CheckCircle, RotateCcw, Clock, Play, AlertCircle, Pencil, Loader2, FileText } from 'lucide-react'
+import { NodeLogDialog } from '@/components/node-log-dialog'
 
 interface FlowTabProps {
   taskId: string
@@ -51,6 +52,7 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
   const [nodeRuns, setNodeRuns] = useState<NodeRun[]>([])
   const [loading, setLoading] = useState(true)
   const [cancelling, setCancelling] = useState(false)
+  const [logDialogNode, setLogDialogNode] = useState<NodeRun | null>(null)
 
   const latestFlow = flowRuns[0] || null
 
@@ -163,6 +165,7 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
               key={node.id}
               nodeRun={node}
               onActionComplete={refreshNodeRuns}
+              onViewLogs={() => setLogDialogNode(node)}
             />
           ))}
         </div>
@@ -171,13 +174,16 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
       {flowRuns.length > 1 && (
         <p className="pt-2 text-xs text-muted-foreground">共 {flowRuns.length} 次执行记录</p>
       )}
+
+      {/* Log dialog */}
+      <NodeLogDialog nodeRun={logDialogNode} open={!!logDialogNode} onClose={() => setLogDialogNode(null)} />
     </div>
   )
 }
 
 // ─── NodeRunItem with inline review panel ───
 
-function NodeRunItem({ nodeRun, onActionComplete }: { nodeRun: NodeRun; onActionComplete: () => void }) {
+function NodeRunItem({ nodeRun, onActionComplete, onViewLogs }: { nodeRun: NodeRun; onActionComplete: () => void; onViewLogs: () => void }) {
   const [expanded, setExpanded] = useState(nodeRun.status === 'waiting_human')
   const [feedback, setFeedback] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -244,6 +250,20 @@ function NodeRunItem({ nodeRun, onActionComplete }: { nodeRun: NodeRun; onAction
         <Badge variant={statusColors[nodeRun.status] || 'outline'} className="text-xs shrink-0">
           {statusLabels[nodeRun.status] || nodeRun.status}
         </Badge>
+        {nodeRun.nodeType === 'agent_task' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0 shrink-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewLogs()
+            }}
+            title="查看日志"
+          >
+            <FileText className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
 
       {/* Expanded content */}

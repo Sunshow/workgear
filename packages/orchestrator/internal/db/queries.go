@@ -487,6 +487,18 @@ func (c *Client) UpdateNodeRunInput(ctx context.Context, id string, input *strin
 	return err
 }
 
+// UpdateNodeRunLogStream saves log stream events to node_runs.log_stream
+func (c *Client) UpdateNodeRunLogStream(ctx context.Context, id string, logEvents []map[string]any) error {
+	logJSON, err := json.Marshal(logEvents)
+	if err != nil {
+		return fmt.Errorf("marshal log events: %w", err)
+	}
+	_, err = c.pool.Exec(ctx, `
+		UPDATE node_runs SET log_stream = $2 WHERE id = $1
+	`, id, string(logJSON))
+	return err
+}
+
 // GetAllNodeRunOutputs returns a map of nodeID → parsed output for all completed nodes in a flow run.
 // For nodes with multiple attempts, only the latest completed attempt is returned.
 func (c *Client) GetAllNodeRunOutputs(ctx context.Context, flowRunID string) (map[string]map[string]any, error) {

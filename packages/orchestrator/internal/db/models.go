@@ -36,7 +36,8 @@ type NodeRun struct {
 	StartedAt       *time.Time `json:"started_at"`
 	CompletedAt     *time.Time `json:"completed_at"`
 	RecoveryCheckpoint *string `json:"recovery_checkpoint"`
-	CreatedAt       time.Time  `json:"created_at"`
+	LogStream          *string `json:"log_stream"` // JSON array: [{type, content, timestamp}, ...]
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 // TimelineEvent 时间线事件

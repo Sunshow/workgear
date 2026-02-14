@@ -130,6 +130,9 @@ func NewCombinedAdapter(ta TypeAdapter, exec Executor) *CombinedAdapter {
 
 func (a *CombinedAdapter) Name() string { return a.typeAdapter.Name() }
 
+// Executor returns the underlying executor (for injecting callbacks)
+func (a *CombinedAdapter) Executor() Executor { return a.executor }
+
 func (a *CombinedAdapter) Execute(ctx context.Context, req *AgentRequest) (*AgentResponse, error) {
 	execReq, err := a.typeAdapter.BuildRequest(ctx, req)
 	if err != nil {
