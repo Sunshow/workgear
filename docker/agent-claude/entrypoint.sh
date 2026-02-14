@@ -220,6 +220,39 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
         PR_NUMBER_VALUE=$(cat /output/pr_number.txt 2>/dev/null || echo "0")
         CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | head -50 || echo "")
 
+        # Collect file change types via git diff --name-status
+        CHANGED_FILES_DETAIL=$(git diff --name-status HEAD~1 HEAD 2>/dev/null | head -50 || echo "")
+
+        # Resolve repo URL (strip credentials, convert SSH to HTTPS, remove .git suffix)
+        REPO_URL=""
+        REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+        if [ -n "$REMOTE_URL" ]; then
+            # Convert SSH format (git@github.com:owner/repo.git) to HTTPS
+            if echo "$REMOTE_URL" | grep -q '^git@'; then
+                REPO_URL=$(echo "$REMOTE_URL" | sed -E 's|^git@([^:]+):|https://\1/|')
+            else
+                # HTTPS format — strip credentials (token@)
+                REPO_URL=$(echo "$REMOTE_URL" | sed -E 's|^(https?://)([^@]+@)|\1|')
+            fi
+            # Remove trailing .git
+            REPO_URL=$(echo "$REPO_URL" | sed 's|\.git$||')
+        fi
+
+        # Build changed_files_detail JSON array from git diff --name-status output
+        DETAIL_JSON="[]"
+        if [ -n "$CHANGED_FILES_DETAIL" ]; then
+            DETAIL_JSON=$(echo "$CHANGED_FILES_DETAIL" | awk -F'\t' '{
+                status = $1
+                path = $2
+                if (status == "A") mapped = "added"
+                else if (status == "M") mapped = "modified"
+                else if (status == "D") mapped = "deleted"
+                else if (substr(status,1,1) == "R") { mapped = "renamed"; if ($3 != "") path = $3 }
+                else mapped = "modified"
+                printf "{\"path\":\"%s\",\"status\":\"%s\"}\n", path, mapped
+            }' | jq -s '.')
+        fi
+
         jq -n \
             --arg branch "$FEATURE_BRANCH" \
             --arg base_branch "$BASE_BRANCH" \
@@ -228,6 +261,8 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
             --arg pr_url "$PR_URL_VALUE" \
             --argjson pr_number "${PR_NUMBER_VALUE:-0}" \
             --arg changed_files "$CHANGED_FILES" \
+            --arg repo_url "$REPO_URL" \
+            --argjson changed_files_detail "$DETAIL_JSON" \
             '{
                 branch: $branch,
                 base_branch: $base_branch,
@@ -235,7 +270,9 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
                 commit_message: $commit_msg,
                 pr_url: $pr_url,
                 pr_number: $pr_number,
-                changed_files: ($changed_files | split("\n") | map(select(. != "")))
+                changed_files: ($changed_files | split("\n") | map(select(. != ""))),
+                repo_url: $repo_url,
+                changed_files_detail: $changed_files_detail
             }' > "$GIT_METADATA_FILE"
 
         echo "[agent] Git metadata written to $GIT_METADATA_FILE"

@@ -50,15 +50,23 @@ type ArtifactFile struct {
 	Content string `json:"content"` // 文件内容（可选，如果为空则后续从 Git 读取）
 }
 
+// ChangedFileDetail represents a file change with its status
+type ChangedFileDetail struct {
+	Path   string `json:"path"`
+	Status string `json:"status"` // "added", "modified", "deleted", "renamed"
+}
+
 // GitMetadata holds Git operation results from agent execution
 type GitMetadata struct {
-	Branch        string   `json:"branch"`
-	BaseBranch    string   `json:"base_branch,omitempty"`
-	Commit        string   `json:"commit"`
-	CommitMessage string   `json:"commit_message,omitempty"`
-	PrUrl         string   `json:"pr_url,omitempty"`
-	PrNumber      int      `json:"pr_number,omitempty"`
-	ChangedFiles  []string `json:"changed_files,omitempty"`
+	Branch             string              `json:"branch"`
+	BaseBranch         string              `json:"base_branch,omitempty"`
+	Commit             string              `json:"commit"`
+	CommitMessage      string              `json:"commit_message,omitempty"`
+	PrUrl              string              `json:"pr_url,omitempty"`
+	PrNumber           int                 `json:"pr_number,omitempty"`
+	ChangedFiles       []string            `json:"changed_files,omitempty"`        // 保留，向后兼容
+	RepoURL            string              `json:"repo_url,omitempty"`             // 新增：仓库 HTTPS URL
+	ChangedFilesDetail []ChangedFileDetail `json:"changed_files_detail,omitempty"` // 新增：含变更类型的文件列表
 }
 
 // ExecutionMetrics tracks agent execution metrics
