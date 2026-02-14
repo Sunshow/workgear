@@ -29,7 +29,7 @@
 - [x] 将 ArtifactContent 查看模式的 `<pre>` 替换为 `<MarkdownRenderer>` **[S]**
 - [x] 添加内容区域滚动容器（`max-h-[600px] overflow-y-auto`） **[S]**
 - [x] 保持编辑模式的 Textarea 不变 **[S]**
-- [ ] 验证 proposal.md / design.md / tasks.md / delta specs 渲染效果 **[S]**
+- [x] 验证 proposal.md / design.md / tasks.md / delta specs 渲染效果 **[S]**
 
 ## 模块：API 端点 (packages/api/src/routes)
 
@@ -39,6 +39,12 @@
 - [x] 实现查询 `artifact_versions` 表获取 content 字段 **[S]**
 - [x] 版本不存在时返回 404 `{ error: "Version not found" }` **[S]**
 - [x] content 为空时返回 `{ content: "" }` **[S]**
+
+### 反馈修复
+
+- [x] **[P1]** 修复 IDOR 越权：`/:id/versions/:versionId/content` 增加 `artifactId` 归属校验（`and(eq(id, versionId), eq(artifactId, id))`） **[S]**
+- [x] **[S3]** 修复重试按钮 bug：拆分 `fetchVersionContent`（纯请求）与 `loadVersionContent`（含 toggle），重试按钮调用 `fetchVersionContent` **[S]**
+- [x] **[P2]** 修复 dark mode 代码高亮：在 `index.css` 中增加 `.dark .hljs` 系列样式（github-dark 配色） **[S]**
 
 ## 模块：Artifacts Tab (packages/web/src/pages/kanban/task-detail)
 

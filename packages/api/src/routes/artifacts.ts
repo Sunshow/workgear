@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { eq, desc } from 'drizzle-orm'
+import { eq, desc, and } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { artifacts, artifactVersions, artifactLinks } from '../db/schema.js'
 import { authenticate } from '../middleware/auth.js'
@@ -66,12 +66,17 @@ export async function artifactRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string; versionId: string } }>(
     '/:id/versions/:versionId/content',
     async (request, reply) => {
-      const { versionId } = request.params
+      const { id, versionId } = request.params
 
       const [version] = await db
         .select({ content: artifactVersions.content })
         .from(artifactVersions)
-        .where(eq(artifactVersions.id, versionId))
+        .where(
+          and(
+            eq(artifactVersions.id, versionId),
+            eq(artifactVersions.artifactId, id)
+          )
+        )
 
       if (!version) {
         return reply.status(404).send({ error: 'Version not found' })

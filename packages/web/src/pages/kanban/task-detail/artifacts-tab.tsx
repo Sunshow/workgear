@@ -74,15 +74,7 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
     }
   }
 
-  async function loadVersionContent(artifactId: string, versionId: string) {
-    if (viewingVersionId === versionId) {
-      setViewingVersionId(null)
-      setVersionContent('')
-      setContentError(null)
-      return
-    }
-
-    setViewingVersionId(versionId)
+  async function fetchVersionContent(artifactId: string, versionId: string) {
     setContentLoading(true)
     setContentError(null)
     try {
@@ -96,6 +88,18 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
     } finally {
       setContentLoading(false)
     }
+  }
+
+  async function loadVersionContent(artifactId: string, versionId: string) {
+    if (viewingVersionId === versionId) {
+      setViewingVersionId(null)
+      setVersionContent('')
+      setContentError(null)
+      return
+    }
+
+    setViewingVersionId(versionId)
+    await fetchVersionContent(artifactId, versionId)
   }
 
   if (loading) {
@@ -194,7 +198,7 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
                               <p className="text-xs text-destructive">{contentError}</p>
                               <button
                                 className="text-xs text-primary hover:underline"
-                                onClick={() => loadVersionContent(artifact.id, version.id)}
+                                onClick={() => fetchVersionContent(artifact.id, version.id)}
                               >
                                 重试
                               </button>
