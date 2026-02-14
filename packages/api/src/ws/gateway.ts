@@ -185,7 +185,10 @@ async function handleFlowCompletedAutoMerge(
 
   if (mergeResult.merged) {
     // 4. Update flow_run
-    await db.update(flowRuns).set({ prMergedAt: new Date() }).where(eq(flowRuns.id, flowRunId))
+    await db.update(flowRuns).set({
+      prMergedAt: new Date(),
+      mergeCommitSha: mergeResult.sha || null,
+    }).where(eq(flowRuns.id, flowRunId))
 
     // 5. Record timeline
     await db.insert(timelineEvents).values({
@@ -195,6 +198,7 @@ async function handleFlowCompletedAutoMerge(
       content: {
         prUrl: flowRun.prUrl,
         message: `PR 已自动合并`,
+        merge_commit_sha: mergeResult.sha || undefined,
       },
     })
 

@@ -1,0 +1,1 @@
+ALTER TABLE "flow_runs" ADD COLUMN "merge_commit_sha" varchar(100);

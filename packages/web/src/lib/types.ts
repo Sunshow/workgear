@@ -146,6 +146,7 @@ export interface FlowRun {
   prUrl: string | null
   prNumber: number | null
   prMergedAt: string | null
+  mergeCommitSha: string | null
   startedAt: string | null
   completedAt: string | null
   createdAt: string

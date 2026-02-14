@@ -204,7 +204,10 @@ export async function flowRunRoutes(app: FastifyInstance) {
     })
 
     if (mergeResult.merged) {
-      await db.update(flowRuns).set({ prMergedAt: new Date() }).where(eq(flowRuns.id, id))
+      await db.update(flowRuns).set({
+        prMergedAt: new Date(),
+        mergeCommitSha: mergeResult.sha || null,
+      }).where(eq(flowRuns.id, id))
 
       await db.insert(timelineEvents).values({
         taskId: task.id,
@@ -213,6 +216,7 @@ export async function flowRunRoutes(app: FastifyInstance) {
         content: {
           prUrl: flowRun.prUrl,
           message: 'PR 已手动合并',
+          merge_commit_sha: mergeResult.sha || undefined,
         },
       })
 
@@ -221,7 +225,7 @@ export async function flowRunRoutes(app: FastifyInstance) {
         await provider.deleteBranch(repoInfo.owner, repoInfo.repo, flowRun.branchName).catch(() => {})
       }
 
-      return { merged: true }
+      return { merged: true, mergeCommitSha: mergeResult.sha || null }
     } else {
       await db.insert(timelineEvents).values({
         taskId: task.id,
