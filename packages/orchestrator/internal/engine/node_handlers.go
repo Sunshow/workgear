@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/sunshow/workgear/orchestrator/internal/agent"
@@ -157,16 +158,12 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
-	// 6b. Handle OpenSpec artifact files (extract from Git changed files)
-	if nodeDef.Config != nil && nodeDef.Config.Opsx != nil && resp.GitMetadata != nil && len(resp.GitMetadata.ChangedFiles) > 0 {
-		changeName := nodeDef.Config.Opsx.ChangeName
-		if rendered, err := RenderTemplate(changeName, runtimeCtx); err == nil && rendered != "" {
-			changeName = rendered
-		}
-		artifactFiles := extractOpenSpecArtifacts(changeName, resp.GitMetadata.ChangedFiles)
+	// 6b. Extract markdown artifacts from Git changed files
+	if resp.GitMetadata != nil && len(resp.GitMetadata.ChangedFiles) > 0 {
+		artifactFiles := extractMarkdownArtifacts(resp.GitMetadata.ChangedFiles)
 		if len(artifactFiles) > 0 {
 			if err := e.handleArtifactFiles(ctx, flowRun, nodeRun, artifactFiles); err != nil {
-				e.logger.Warnw("Failed to create OpenSpec artifacts", "error", err, "node_id", nodeRun.NodeID)
+				e.logger.Warnw("Failed to create artifacts from changed files", "error", err, "node_id", nodeRun.NodeID)
 				// Non-fatal: don't block flow execution
 			}
 		}
@@ -504,35 +501,19 @@ func (e *FlowExecutor) updateTaskGitInfo(ctx context.Context, taskID, flowRunID,
 	return nil
 }
 
-// extractOpenSpecArtifacts extracts artifact file info from OpenSpec changed files
-func extractOpenSpecArtifacts(changeName string, changedFiles []string) []agent.ArtifactFile {
-	prefix := fmt.Sprintf("openspec/changes/%s/", changeName)
+// extractMarkdownArtifacts scans git changed files and extracts all markdown files as artifacts.
+// Automatically infers artifact type and title from file path.
+func extractMarkdownArtifacts(changedFiles []string) []agent.ArtifactFile {
 	var artifacts []agent.ArtifactFile
 
 	for _, file := range changedFiles {
-		if !strings.HasPrefix(file, prefix) {
+		// Only process markdown files
+		if !strings.HasSuffix(strings.ToLower(file), ".md") {
 			continue
 		}
 
-		relativePath := strings.TrimPrefix(file, prefix)
-		var artifactType, title string
-
-		switch {
-		case relativePath == "proposal.md":
-			artifactType = "proposal"
-			title = "Proposal"
-		case relativePath == "design.md":
-			artifactType = "design"
-			title = "Design"
-		case relativePath == "tasks.md":
-			artifactType = "tasks"
-			title = "Tasks"
-		case strings.HasPrefix(relativePath, "specs/"):
-			artifactType = "spec"
-			title = strings.TrimPrefix(relativePath, "specs/")
-		default:
-			continue
-		}
+		// Infer type and title from file path
+		artifactType, title := inferArtifactTypeAndTitle(file)
 
 		artifacts = append(artifacts, agent.ArtifactFile{
 			Path:  file,
@@ -542,6 +523,36 @@ func extractOpenSpecArtifacts(changeName string, changedFiles []string) []agent.
 	}
 
 	return artifacts
+}
+
+// inferArtifactTypeAndTitle infers artifact type and display title from file path.
+func inferArtifactTypeAndTitle(filePath string) (artifactType, title string) {
+	// Extract filename without extension
+	fileName := strings.TrimSuffix(filepath.Base(filePath), ".md")
+	fileName = strings.TrimSuffix(fileName, ".MD")
+
+	// Infer type from common patterns
+	lowerName := strings.ToLower(fileName)
+	switch {
+	case lowerName == "proposal":
+		return "proposal", "Proposal"
+	case lowerName == "design":
+		return "design", "Design"
+	case lowerName == "tasks":
+		return "tasks", "Tasks"
+	case lowerName == "readme":
+		return "readme", "README"
+	case strings.Contains(lowerName, "spec"):
+		return "spec", fileName
+	case strings.Contains(lowerName, "design"):
+		return "design", fileName
+	case strings.Contains(lowerName, "plan"):
+		return "plan", fileName
+	case strings.Contains(lowerName, "review"):
+		return "review", fileName
+	default:
+		return "doc", fileName
+	}
 }
 
 // handleArtifactFiles creates multiple artifact records from agent output
