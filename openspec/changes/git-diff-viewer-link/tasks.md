@@ -20,8 +20,8 @@
 
 ### 解析仓库 URL
 
-- [x] 在 `node_handlers.go` 中新增 `resolveRepoURL(agentConfig, gitRemoteOutput string)` 函数 **[S]**
-- [x] 优先使用 AgentConfig 中的 repoUrl 字段 **[S]**
+- [x] 在 `node_handlers.go` 中新增 `resolveRepoURL(remoteURL string)` 函数（清洗单个 URL：SSH→HTTPS、去凭据、去 .git 后缀） **[S]**
+- [x] 在 `updateTaskGitInfo` 中实现优先级：entrypoint.sh 已解析的 RepoURL 优先，为空时调用 `resolveRepoURL(configRepoURL)` 兜底 **[S]**
 - [x] 兜底解析 `git remote get-url origin` 输出，SSH 格式转 HTTPS **[S]**
 - [x] 将结果填充到 `GitMetadata.RepoURL` **[S]**
 

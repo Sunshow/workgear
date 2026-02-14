@@ -292,22 +292,25 @@ export function GitTab({ taskId, gitBranch }: GitTabProps) {
             <span className="text-xs text-muted-foreground">({commits.length})</span>
           </div>
           <div className="rounded-md border divide-y">
-            {commits.map((commit, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-2">
-                {buildCommitUrl(commit.hash) ? (
-                  <a
-                    href={buildCommitUrl(commit.hash)!}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <code className="text-xs text-blue-600 hover:underline shrink-0">{commit.hash.slice(0, 7)}</code>
-                  </a>
-                ) : (
-                  <code className="text-xs text-muted-foreground shrink-0">{commit.hash.slice(0, 7)}</code>
-                )}
-                <span className="text-sm truncate">{commit.message}</span>
-              </div>
-            ))}
+            {commits.map((commit, i) => {
+              const commitUrl = buildCommitUrl(commit.hash)
+              return (
+                <div key={i} className="flex items-center gap-2 px-3 py-2">
+                  {commitUrl ? (
+                    <a
+                      href={commitUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <code className="text-xs text-blue-600 hover:underline shrink-0">{commit.hash.slice(0, 7)}</code>
+                    </a>
+                  ) : (
+                    <code className="text-xs text-muted-foreground shrink-0">{commit.hash.slice(0, 7)}</code>
+                  )}
+                  <span className="text-sm truncate">{commit.message}</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

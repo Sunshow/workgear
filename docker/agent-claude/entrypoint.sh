@@ -239,18 +239,22 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
         fi
 
         # Build changed_files_detail JSON array from git diff --name-status output
+        # Uses jq for safe JSON construction (handles special chars in file paths)
         DETAIL_JSON="[]"
         if [ -n "$CHANGED_FILES_DETAIL" ]; then
-            DETAIL_JSON=$(echo "$CHANGED_FILES_DETAIL" | awk -F'\t' '{
-                status = $1
-                path = $2
-                if (status == "A") mapped = "added"
-                else if (status == "M") mapped = "modified"
-                else if (status == "D") mapped = "deleted"
-                else if (substr(status,1,1) == "R") { mapped = "renamed"; if ($3 != "") path = $3 }
-                else mapped = "modified"
-                printf "{\"path\":\"%s\",\"status\":\"%s\"}\n", path, mapped
-            }' | jq -s '.')
+            DETAIL_JSON=$(echo "$CHANGED_FILES_DETAIL" | while IFS=$'\t' read -r status path rest; do
+                [ -z "$status" ] && continue
+                case "$status" in
+                    A)  mapped="added" ;;
+                    M)  mapped="modified" ;;
+                    D)  mapped="deleted" ;;
+                    R*) mapped="renamed"; [ -n "$rest" ] && path="$rest" ;;
+                    *)  mapped="modified" ;;
+                esac
+                jq -n --arg p "$path" --arg s "$mapped" '{path:$p,status:$s}'
+            done | jq -s '.')
+            # Fallback to empty array if jq pipeline failed
+            [ -z "$DETAIL_JSON" ] && DETAIL_JSON="[]"
         fi
 
         jq -n \

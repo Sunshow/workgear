@@ -763,6 +763,9 @@ func resolveRepoURL(remoteURL string) string {
 }
 
 // parseChangedFilesDetail parses "git diff --name-status" output into ChangedFileDetail slice.
+// NOTE: Currently unused — entrypoint.sh parses git diff --name-status inside the container
+// and writes the result to git_metadata.json, which adapter.go deserializes directly.
+// Retained as a Go-side backup parser in case the shell-based parsing is removed in the future.
 func parseChangedFilesDetail(output string) []agent.ChangedFileDetail {
 	var details []agent.ChangedFileDetail
 	statusMap := map[string]string{
