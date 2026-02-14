@@ -265,6 +265,10 @@ export const agentRoles = pgTable('agent_roles', {
   slug: varchar('slug', { length: 100 }).unique().notNull(),
   name: varchar('name', { length: 200 }).notNull(),
   description: text('description'),
+  agentType: varchar('agent_type', { length: 50 }).notNull().default('claude-code'),
+  defaultModel: varchar('default_model', { length: 100 }),
   systemPrompt: text('system_prompt').notNull(),
+  isBuiltin: boolean('is_builtin').default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })

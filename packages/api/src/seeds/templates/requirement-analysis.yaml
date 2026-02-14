@@ -34,7 +34,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.analyst_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         你是一个资深的需求分析师。请分析以下需求：
@@ -76,7 +75,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.analyst_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         请根据以下 PRD 拆解出可独立开发的 User Story：

@@ -27,7 +27,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.analyst_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         你是一个需求分析师。请分析以下需求并输出 PRD：
@@ -67,7 +66,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.developer_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         请按照以下 PRD 执行任务：

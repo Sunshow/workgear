@@ -30,7 +30,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.reviewer_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         你是一个代码审查专家。请 Review 以下代码变更：

@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'react-router'
-import { FolderKanban, Workflow, Globe } from 'lucide-react'
+import { FolderKanban, Workflow, Globe, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { UserMenu } from './user-menu'
 
 const navItems = [
   { to: '/projects', label: '项目', icon: FolderKanban },
   { to: '/explore', label: '探索', icon: Globe },
+  { to: '/settings/agent-roles', label: 'Agent 角色', icon: Bot },
 ]
 
 export function Sidebar() {

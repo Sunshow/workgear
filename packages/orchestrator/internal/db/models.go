@@ -61,3 +61,11 @@ const (
 	StatusWaitingHuman = "waiting_human"
 	StatusCancelled    = "cancelled"
 )
+
+// AgentRoleConfig holds agent role configuration from database
+type AgentRoleConfig struct {
+	Slug         string
+	AgentType    string
+	DefaultModel *string // nil = use global default CLAUDE_MODEL
+	SystemPrompt string
+}

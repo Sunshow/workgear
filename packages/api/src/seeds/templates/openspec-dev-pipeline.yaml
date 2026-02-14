@@ -24,7 +24,6 @@ nodes:
     type: agent_task
     agent:
       role: "spec-architect"
-      model: "{{params.model}}"
     config:
       mode: generate_change_name
       prompt_template: |
@@ -45,7 +44,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.spec_role}}"
-      model: "{{params.model}}"
     config:
       mode: opsx_plan
       opsx:
@@ -100,7 +98,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.developer_role}}"
-      model: "{{params.model}}"
     config:
       mode: opsx_apply
       opsx:
@@ -128,7 +125,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.reviewer_role}}"
-      model: "{{params.model}}"
     config:
       mode: review
       prompt_template: |
@@ -167,7 +163,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.spec_role}}"
-      model: "{{params.model}}"
     config:
       mode: opsx_plan
       opsx:

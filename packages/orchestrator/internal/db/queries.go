@@ -617,3 +617,48 @@ func (c *Client) UpdateFlowRunPR(ctx context.Context, flowRunID, branchName, prU
 	return nil
 }
 
+// ─── Agent Role Queries ───
+
+// GetAgentRoleConfig retrieves agent role configuration by slug
+func (c *Client) GetAgentRoleConfig(ctx context.Context, slug string) (*AgentRoleConfig, error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT slug, agent_type, default_model, system_prompt
+		FROM agent_roles
+		WHERE slug = $1
+	`, slug)
+
+	var config AgentRoleConfig
+	err := row.Scan(&config.Slug, &config.AgentType, &config.DefaultModel, &config.SystemPrompt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil // Role not found in DB, will use fallback
+		}
+		return nil, fmt.Errorf("get agent role config: %w", err)
+	}
+	return &config, nil
+}
+
+// GetAllAgentRoleConfigs retrieves all agent role configurations as a map
+func (c *Client) GetAllAgentRoleConfigs(ctx context.Context) (map[string]*AgentRoleConfig, error) {
+	rows, err := c.pool.Query(ctx, `
+		SELECT slug, agent_type, default_model, system_prompt
+		FROM agent_roles
+		ORDER BY slug
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("get all agent role configs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]*AgentRoleConfig)
+	for rows.Next() {
+		var config AgentRoleConfig
+		if err := rows.Scan(&config.Slug, &config.AgentType, &config.DefaultModel, &config.SystemPrompt); err != nil {
+			return nil, fmt.Errorf("scan agent role config: %w", err)
+		}
+		result[config.Slug] = &config
+	}
+	return result, nil
+}
+
+

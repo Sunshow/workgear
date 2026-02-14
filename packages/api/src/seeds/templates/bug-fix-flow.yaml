@@ -36,7 +36,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.analyst_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         你是一个 Bug 分析专家。请分析以下 Bug：
@@ -71,7 +70,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.developer_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         请按照以下分析结果修复 Bug：
@@ -90,7 +88,6 @@ nodes:
     type: agent_task
     agent:
       role: "{{params.tester_role}}"
-      model: "{{params.model}}"
     config:
       prompt_template: |
         请验证以下 Bug 修复：

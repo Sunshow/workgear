@@ -8,6 +8,7 @@ import { KanbanPage } from './pages/kanban'
 import { WorkflowsPage } from './pages/workflows'
 import { WorkflowEditorPage } from './pages/workflows/workflow-editor'
 import { ExplorePage } from './pages/explore'
+import { AgentRolesPage } from './pages/settings/agent-roles'
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="projects/:projectId/kanban" element={<KanbanPage />} />
           <Route path="projects/:projectId/workflows" element={<WorkflowsPage />} />
           <Route path="projects/:projectId/workflows/:workflowId/edit" element={<WorkflowEditorPage />} />
+          <Route path="settings/agent-roles" element={<AgentRolesPage />} />
           <Route path="explore" element={<ExplorePage />} />
         </Route>
       </Routes>

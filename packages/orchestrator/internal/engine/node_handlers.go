@@ -46,7 +46,32 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		return fmt.Errorf("get agent adapter: %w", err)
 	}
 
-	// 5. Build agent request
+	// 5. Get role config from database
+	roleConfig, err := e.db.GetAgentRoleConfig(ctx, role)
+	if err != nil {
+		e.logger.Warnw("Failed to get role config from DB", "role", role, "error", err)
+	}
+
+	// 6. Determine model: DSL explicit config > role default > global default (handled by adapter)
+	model := ""
+	if nodeDef.Agent != nil && nodeDef.Agent.Model != "" {
+		model = nodeDef.Agent.Model
+		// Render model in case it contains template variables
+		if rendered, err := RenderTemplate(model, runtimeCtx); err == nil {
+			model = rendered
+		}
+	}
+	if model == "" && roleConfig != nil && roleConfig.DefaultModel != nil {
+		model = *roleConfig.DefaultModel
+	}
+
+	// 7. Use system prompt from database (overrides hardcoded prompt)
+	rolePrompt := ""
+	if roleConfig != nil {
+		rolePrompt = roleConfig.SystemPrompt
+	}
+
+	// 8. Build agent request
 	mode := "execute"
 	prompt := ""
 	if nodeDef.Config != nil {
@@ -103,7 +128,9 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		GitAccessToken: gitAccessToken,
 		TaskTitle:      taskTitle,
 		NodeName:       ptrStr(nodeRun.NodeName),
+		RolePrompt:     rolePrompt,
 		Feedback:       feedback,
+		Model:          model,
 	}
 
 	// Resolve OpenSpec config for opsx_plan / opsx_apply modes
@@ -127,6 +154,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		"node_id", nodeRun.NodeID,
 		"role", role,
 		"mode", mode,
+		"model", model,
 		"adapter", adapter.Name(),
 		"git_repo", gitRepoURL,
 		"git_branch", gitBranch,

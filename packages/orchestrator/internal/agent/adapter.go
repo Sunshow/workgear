@@ -23,6 +23,7 @@ type AgentRequest struct {
 	NodeName        string         `json:"node_name"`
 	RolePrompt      string         `json:"role_prompt"`
 	Feedback        string         `json:"feedback"`
+	Model           string         `json:"model"` // Request-level model (highest priority)
 	OpsxConfig      *OpsxConfig    `json:"opsx,omitempty"`
 }
 

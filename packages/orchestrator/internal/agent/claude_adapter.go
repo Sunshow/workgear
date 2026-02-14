@@ -22,9 +22,7 @@ type ClaudeCodeAdapter struct {
 
 // NewClaudeCodeAdapter creates a new ClaudeCode adapter
 func NewClaudeCodeAdapter(promptBuilder *PromptBuilder, model string) *ClaudeCodeAdapter {
-	if model == "" {
-		model = "claude-sonnet-3.5"
-	}
+	// model can be empty; will be resolved at request time from role config or error out
 	image := os.Getenv("AGENT_DOCKER_IMAGE")
 	if image == "" {
 		image = "workgear/agent-claude:latest"
@@ -102,10 +100,15 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 		env["GIT_CREATE_PR"] = "false"
 	}
 
-	// Model selection
-	if a.model != "" {
-		env["CLAUDE_MODEL"] = a.model
+	// Model selection: req.Model (highest priority) > a.model (global default)
+	model := req.Model
+	if model == "" {
+		model = a.model
 	}
+	if model == "" {
+		return nil, fmt.Errorf("no model configured for agent request (task=%s, node=%s)", req.TaskID, req.NodeID)
+	}
+	env["CLAUDE_MODEL"] = model
 
 	// OpenSpec configuration (opsx_plan / opsx_apply modes)
 	if req.Mode == "opsx_plan" || req.Mode == "opsx_apply" {

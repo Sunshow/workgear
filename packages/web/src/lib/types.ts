@@ -189,3 +189,34 @@ export interface ArtifactVersion {
   createdBy: string | null
   createdAt: string
 }
+
+// Agent Role types
+export interface AgentRole {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  agentType: string
+  defaultModel: string | null
+  systemPrompt: string
+  isBuiltin: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateAgentRoleDto {
+  slug: string
+  name: string
+  description?: string
+  agentType?: string
+  defaultModel?: string | null
+  systemPrompt: string
+}
+
+export interface UpdateAgentRoleDto {
+  name?: string
+  description?: string
+  agentType?: string
+  defaultModel?: string | null
+  systemPrompt?: string
+}
