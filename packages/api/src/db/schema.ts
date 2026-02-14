@@ -1,6 +1,32 @@
 import { pgTable, uuid, varchar, text, integer, boolean, timestamp, jsonb, unique, index } from 'drizzle-orm/pg-core'
 
 // ============================================================
+// 用户表
+// ============================================================
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 255 }).unique().notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  avatarUrl: text('avatar_url'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ============================================================
+// 刷新令牌表
+// ============================================================
+export const refreshTokens = pgTable('refresh_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: varchar('token_hash', { length: 255 }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_refresh_tokens_user_id').on(table.userId),
+])
+
+// ============================================================
 // 项目表
 // ============================================================
 export const projects = pgTable('projects', {
@@ -9,9 +35,23 @@ export const projects = pgTable('projects', {
   description: text('description'),
   gitRepoUrl: varchar('git_repo_url', { length: 500 }),
   gitAccessToken: varchar('git_access_token', { length: 500 }),
+  visibility: varchar('visibility', { length: 20 }).default('private').notNull(),
+  ownerId: uuid('owner_id').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+// ============================================================
+// 项目成员表
+// ============================================================
+export const projectMembers = pgTable('project_members', {
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: varchar('role', { length: 20 }).notNull().default('member'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique('project_members_pk').on(table.projectId, table.userId),
+])
 
 // ============================================================
 // 看板表

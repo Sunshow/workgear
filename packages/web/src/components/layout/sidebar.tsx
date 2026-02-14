@@ -1,9 +1,11 @@
 import { Link, useLocation } from 'react-router'
-import { FolderKanban, Workflow } from 'lucide-react'
+import { FolderKanban, Workflow, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { UserMenu } from './user-menu'
 
 const navItems = [
   { to: '/projects', label: '项目', icon: FolderKanban },
+  { to: '/explore', label: '探索', icon: Globe },
 ]
 
 export function Sidebar() {
@@ -37,6 +39,9 @@ export function Sidebar() {
           )
         })}
       </nav>
+      <div className="border-t p-3">
+        <UserMenu />
+      </div>
     </aside>
   )
 }

@@ -10,13 +10,17 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/seeds/seed-templates.ts",
+    "db:seed:bootstrap": "tsx src/seeds/seed-bootstrap.ts",
     "clean": "rm -rf dist node_modules"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.0.0",
+    "@fastify/jwt": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
     "@grpc/grpc-js": "^1.12.0",
     "@grpc/proto-loader": "^0.7.13",
+    "bcrypt": "^6.0.0",
     "dotenv": "^16.4.0",
     "drizzle-orm": "1.0.0-beta.15-859cf75",
     "fastify": "^5.7.4",
@@ -26,6 +30,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "1.0.0-beta.15-859cf75",

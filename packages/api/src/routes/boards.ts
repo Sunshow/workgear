@@ -2,17 +2,18 @@ import type { FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { boards, boardColumns } from '../db/schema.js'
+import { authenticate } from '../middleware/auth.js'
 
 export async function boardRoutes(app: FastifyInstance) {
   // 获取项目的看板
-  app.get<{ Querystring: { projectId: string } }>('/', async (request) => {
+  app.get<{ Querystring: { projectId: string } }>('/', { preHandler: [authenticate] }, async (request) => {
     const { projectId } = request.query
     const result = await db.select().from(boards).where(eq(boards.projectId, projectId))
     return result
   })
 
   // 获取看板的列
-  app.get<{ Params: { id: string } }>('/:id/columns', async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/:id/columns', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params
 
     const board = await db.select().from(boards).where(eq(boards.id, id))

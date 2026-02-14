@@ -2,6 +2,8 @@ import 'dotenv/config'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import websocket from '@fastify/websocket'
+import jwt from '@fastify/jwt'
+import cookie from '@fastify/cookie'
 import { projectRoutes } from './routes/projects.js'
 import { boardRoutes } from './routes/boards.js'
 import { taskRoutes } from './routes/tasks.js'
@@ -12,10 +14,12 @@ import { flowRunRoutes } from './routes/flow-runs.js'
 import { artifactRoutes } from './routes/artifacts.js'
 import { nodeRunRoutes } from './routes/node-runs.js'
 import { openspecRoutes } from './routes/openspec.js'
+import { authRoutes } from './routes/auth.js'
 import { wsGateway, startEventForwarding, stopEventForwarding } from './ws/gateway.js'
 
 const PORT = parseInt(process.env.PORT || '4000', 10)
 const HOST = process.env.HOST || '0.0.0.0'
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production'
 
 const app = Fastify({
   logger: {
@@ -28,11 +32,14 @@ const app = Fastify({
 })
 
 // Plugins
-await app.register(cors, { origin: true })
+await app.register(cors, { origin: true, credentials: true })
+await app.register(cookie)
+await app.register(jwt, { secret: JWT_SECRET })
 await app.register(websocket)
 
 // Routes
 await app.register(healthRoutes, { prefix: '/api' })
+await app.register(authRoutes, { prefix: '/api/auth' })
 await app.register(projectRoutes, { prefix: '/api/projects' })
 await app.register(boardRoutes, { prefix: '/api/boards' })
 await app.register(taskRoutes, { prefix: '/api/tasks' })

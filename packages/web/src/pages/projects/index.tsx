@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Plus, MoreVertical, Pencil, Trash2 } from 'lucide-react'
+import { Plus, MoreVertical, Pencil, Trash2, Globe, Lock } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Project } from '@/lib/types'
 import { useProjectStore } from '@/stores/project-store'
@@ -91,6 +91,10 @@ export function ProjectsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <CardTitle>{project.name}</CardTitle>
+                      <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        {project.visibility === 'public' ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+                        {project.visibility === 'public' ? '公开' : '私有'}
+                      </span>
                       {project.description && (
                         <CardDescription className="mt-2">{project.description}</CardDescription>
                       )}

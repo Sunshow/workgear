@@ -2,8 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import { eq, desc } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { artifacts, artifactVersions, artifactLinks } from '../db/schema.js'
+import { authenticate } from '../middleware/auth.js'
 
 export async function artifactRoutes(app: FastifyInstance) {
+  // 所有产物路由都需要登录
+  app.addHook('preHandler', authenticate)
   // 查询 Task 关联的产物
   app.get<{ Querystring: { taskId: string } }>('/', async (request, reply) => {
     const { taskId } = request.query

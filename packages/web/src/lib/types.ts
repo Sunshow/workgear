@@ -5,6 +5,8 @@ export interface Project {
   description: string | null
   gitRepoUrl: string | null
   gitAccessToken: string | null
+  visibility: 'private' | 'public'
+  ownerId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -14,6 +16,7 @@ export interface CreateProjectDto {
   description?: string
   gitRepoUrl?: string
   gitAccessToken?: string
+  visibility?: 'private' | 'public'
 }
 
 // Board types

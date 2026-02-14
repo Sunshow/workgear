@@ -16,6 +16,9 @@
     "pnpm": ">=10.0.0"
   },
   "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "protobufjs", "bcrypt"]
+  },
   "devDependencies": {
     "concurrently": "^9.2.1"
   }

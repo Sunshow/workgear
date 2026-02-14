@@ -3,8 +3,11 @@ import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { nodeRuns } from '../db/schema.js'
 import * as orchestrator from '../grpc/client.js'
+import { authenticate } from '../middleware/auth.js'
 
 export async function nodeRunRoutes(app: FastifyInstance) {
+  // 所有节点执行路由都需要登录
+  app.addHook('preHandler', authenticate)
   // Get node run details
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const { id } = request.params

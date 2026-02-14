@@ -7,10 +7,13 @@ import { promisify } from 'util'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
+import { authenticate } from '../middleware/auth.js'
 
 const execFileAsync = promisify(execFile)
 
 export async function openspecRoutes(app: FastifyInstance) {
+  // 所有 OpenSpec 路由都需要登录
+  app.addHook('preHandler', authenticate)
   // 获取 change 下所有 artifact 文件列表和内容
   app.get<{
     Params: { projectId: string; changeName: string }

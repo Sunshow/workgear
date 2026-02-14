@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { api } from '@/lib/api'
-import type { CreateProjectDto, Project } from '@/lib/types'
+import type { Project } from '@/lib/types'
 import { useProjectStore } from '@/stores/project-store'
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface CreateProjectDialogProps {
   open: boolean
@@ -22,12 +23,24 @@ interface CreateProjectDialogProps {
   onSuccess?: () => void
 }
 
+interface CreateProjectForm {
+  name: string
+  description?: string
+  gitRepoUrl?: string
+  gitAccessToken?: string
+  visibility: 'private' | 'public'
+}
+
 export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreateProjectDialogProps) {
   const { addProject } = useProjectStore()
   const [loading, setLoading] = useState(false)
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<CreateProjectDto>()
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CreateProjectForm>({
+    defaultValues: { visibility: 'private' }
+  })
 
-  async function onSubmit(data: CreateProjectDto) {
+  const visibility = watch('visibility')
+
+  async function onSubmit(data: CreateProjectForm) {
     setLoading(true)
     try {
       const project = await api.post('projects', { json: data }).json<Project>()
@@ -68,6 +81,18 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
                 placeholder="项目描述（可选）"
                 {...register('description')}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="visibility">可见性</Label>
+              <Select value={visibility} onValueChange={(v) => setValue('visibility', v as 'private' | 'public')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">私有 — 仅成员可见</SelectItem>
+                  <SelectItem value="public">公开 — 所有人可查看</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="gitRepoUrl">Git 仓库地址</Label>

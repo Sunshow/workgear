@@ -2,8 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { tasks, timelineEvents } from '../db/schema.js'
+import { authenticate } from '../middleware/auth.js'
 
 export async function taskRoutes(app: FastifyInstance) {
+  // 所有任务路由都需要登录
+  app.addHook('preHandler', authenticate)
   // 获取项目的所有任务
   app.get<{ Querystring: { projectId: string } }>('/', async (request) => {
     const { projectId } = request.query

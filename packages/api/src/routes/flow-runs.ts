@@ -4,8 +4,11 @@ import { db } from '../db/index.js'
 import { flowRuns, nodeRuns, tasks, workflows, timelineEvents } from '../db/schema.js'
 import { parse } from 'yaml'
 import * as orchestrator from '../grpc/client.js'
+import { authenticate } from '../middleware/auth.js'
 
 export async function flowRunRoutes(app: FastifyInstance) {
+  // 所有流程执行路由都需要登录
+  app.addHook('preHandler', authenticate)
   // 创建 FlowRun（启动流程）
   app.post<{
     Body: {
