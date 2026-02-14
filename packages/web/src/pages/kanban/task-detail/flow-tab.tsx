@@ -251,10 +251,25 @@ function NodeRunItem({ nodeRun, onActionComplete }: { nodeRun: NodeRun; onAction
           {/* Show output for completed nodes */}
           {nodeRun.output && (
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">输出</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">执行结果</p>
               <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-48">
-                {JSON.stringify(nodeRun.output, null, 2)}
+                {JSON.stringify(filterInternalFields(nodeRun.output), null, 2)}
               </pre>
+            </div>
+          )}
+
+          {/* Show artifact link if present */}
+          {nodeRun.output?._artifact_id && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">产物</p>
+              <a 
+                href={`/artifacts/${nodeRun.output._artifact_id}`} 
+                className="text-xs text-blue-500 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                查看产物详情 →
+              </a>
             </div>
           )}
 
@@ -368,4 +383,10 @@ function deduplicateNodeRuns(nodeRuns: NodeRun[]): NodeRun[] {
     }
   }
   return result
+}
+
+function filterInternalFields(output: any): any {
+  if (!output || typeof output !== 'object') return output
+  const { _artifact_id, _feedback, _role, raw, ...rest } = output
+  return rest
 }

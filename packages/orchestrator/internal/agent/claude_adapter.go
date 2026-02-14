@@ -133,6 +133,7 @@ func (a *ClaudeCodeAdapter) ParseResponse(resp *ExecutorResponse) (*AgentRespons
 			Metrics: &ExecutionMetrics{
 				DurationMs: 0,
 			},
+			GitMetadata: resp.GitMetadata, // Pass through even on parse failure
 		}, nil
 	}
 
@@ -167,8 +168,9 @@ func (a *ClaudeCodeAdapter) ParseResponse(resp *ExecutorResponse) (*AgentRespons
 	}
 
 	return &AgentResponse{
-		Output:  output,
-		Metrics: metrics,
+		Output:      output,
+		Metrics:     metrics,
+		GitMetadata: resp.GitMetadata, // Pass through from executor
 	}, nil
 }
 

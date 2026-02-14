@@ -39,15 +39,23 @@ type AgentDef struct {
 
 // NodeConfigDef holds node-specific configuration
 type NodeConfigDef struct {
-	Mode           string          `yaml:"mode"` // spec / execute / review / opsx_plan / opsx_apply
-	PromptTemplate string          `yaml:"prompt_template"`
-	ReviewTarget   string          `yaml:"review_target"`
-	Actions        []string        `yaml:"actions"`
-	Form           []FormFieldDef  `yaml:"form"`
-	Timeout        string          `yaml:"timeout"`
-	Opsx           *OpsxConfigDef  `yaml:"opsx"`
-	ShowArtifacts  bool            `yaml:"show_artifacts"`
-	ArtifactPaths  []string        `yaml:"artifact_paths"`
+	Mode           string            `yaml:"mode"` // spec / execute / review / opsx_plan / opsx_apply
+	PromptTemplate string            `yaml:"prompt_template"`
+	ReviewTarget   string            `yaml:"review_target"`
+	Actions        []string          `yaml:"actions"`
+	Form           []FormFieldDef    `yaml:"form"`
+	Timeout        string            `yaml:"timeout"`
+	Opsx           *OpsxConfigDef    `yaml:"opsx"`
+	Artifact       *ArtifactConfigDef `yaml:"artifact"`
+	ShowArtifacts  bool              `yaml:"show_artifacts"`
+	ArtifactPaths  []string          `yaml:"artifact_paths"`
+}
+
+// ArtifactConfigDef defines artifact creation for a node
+type ArtifactConfigDef struct {
+	Type        string `yaml:"type"`         // prd / spec / plan / code / review_report / etc.
+	Title       string `yaml:"title"`        // Template expression for artifact title
+	DerivedFrom string `yaml:"derived_from"` // Template expression for parent artifact ID
 }
 
 // OpsxConfigDef holds OpenSpec configuration in DSL

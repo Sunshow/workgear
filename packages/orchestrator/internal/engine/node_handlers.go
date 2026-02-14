@@ -133,7 +133,23 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
-	// 6. Save output and mark completed
+	// 6. Handle artifact creation (if configured)
+	if nodeDef.Config != nil && nodeDef.Config.Artifact != nil {
+		if err := e.handleArtifact(ctx, flowRun, nodeRun, nodeDef, runtimeCtx, resp.Output); err != nil {
+			e.logger.Warnw("Failed to create artifact", "error", err, "node_id", nodeRun.NodeID)
+			// Non-fatal: don't block flow execution
+		}
+	}
+
+	// 7. Update Git info on task (if agent performed git operations)
+	if resp.GitMetadata != nil && resp.GitMetadata.Branch != "" {
+		if err := e.updateTaskGitInfo(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, resp.GitMetadata); err != nil {
+			e.logger.Warnw("Failed to update git info", "error", err, "node_id", nodeRun.NodeID)
+			// Non-fatal: don't block flow execution
+		}
+	}
+
+	// 8. Save output and mark completed
 	if err := e.db.UpdateNodeRunOutput(ctx, nodeRun.ID, resp.Output); err != nil {
 		return fmt.Errorf("save output: %w", err)
 	}
@@ -141,12 +157,12 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		return fmt.Errorf("update status: %w", err)
 	}
 
-	// 7. Publish completion event
+	// 9. Publish completion event
 	e.publishEvent(nodeRun.FlowRunID, nodeRun.ID, nodeRun.NodeID, "node.completed", map[string]any{
 		"output": resp.Output,
 	})
 
-	// 8. Record timeline event
+	// 10. Record timeline event
 	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, "agent_completed", map[string]any{
 		"node_id":   nodeRun.NodeID,
 		"node_name": ptrStr(nodeRun.NodeName),
@@ -326,4 +342,127 @@ func (e *FlowExecutor) buildRuntimeContext(ctx context.Context, flowRun *db.Flow
 	runtimeCtx["task"] = taskCtx
 
 	return runtimeCtx
+}
+
+// ─── Artifact & Git Helpers ───
+
+// handleArtifact creates an artifact record from agent output when the node has artifact config
+func (e *FlowExecutor) handleArtifact(ctx context.Context, flowRun *db.FlowRun, nodeRun *db.NodeRun, nodeDef *NodeDef, runtimeCtx map[string]any, output map[string]any) error {
+	artifactCfg := nodeDef.Config.Artifact
+
+	// Render title template
+	title := artifactCfg.Type // fallback
+	if artifactCfg.Title != "" {
+		if rendered, err := RenderTemplate(artifactCfg.Title, runtimeCtx); err == nil && rendered != "" {
+			title = rendered
+		}
+	}
+
+	// Extract content from output based on artifact type
+	content := extractArtifactContent(artifactCfg.Type, output)
+	if content == "" {
+		return fmt.Errorf("no content found for artifact type %s", artifactCfg.Type)
+	}
+
+	// Create artifact
+	artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, artifactCfg.Type, title)
+	if err != nil {
+		return fmt.Errorf("create artifact: %w", err)
+	}
+
+	// Create initial version
+	if err := e.db.CreateArtifactVersion(ctx, artifactID, 1, content, "Initial version", "agent"); err != nil {
+		return fmt.Errorf("create artifact version: %w", err)
+	}
+
+	// Inject artifact_id into output for downstream nodes
+	output["_artifact_id"] = artifactID
+
+	e.logger.Infow("Created artifact",
+		"artifact_id", artifactID,
+		"type", artifactCfg.Type,
+		"title", title,
+		"content_len", len(content),
+	)
+
+	// Record timeline event
+	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, "artifact_created", map[string]any{
+		"artifact_id": artifactID,
+		"type":        artifactCfg.Type,
+		"title":       title,
+		"message":     fmt.Sprintf("创建产物：%s", title),
+	})
+
+	return nil
+}
+
+// extractArtifactContent extracts the relevant content string from agent output
+func extractArtifactContent(artifactType string, output map[string]any) string {
+	// Try type-specific fields first
+	switch artifactType {
+	case "prd", "spec", "plan", "tech_spec":
+		if v, ok := output["plan"].(string); ok && v != "" {
+			return v
+		}
+	case "review_report":
+		if v, ok := output["report"].(string); ok && v != "" {
+			return v
+		}
+	}
+
+	// Try common fields
+	if v, ok := output["summary"].(string); ok && v != "" {
+		return v
+	}
+	if v, ok := output["result"].(string); ok && v != "" {
+		return v
+	}
+
+	// Fallback: serialize the entire output as JSON
+	if b, err := json.Marshal(output); err == nil {
+		s := string(b)
+		// Don't use raw fallback if it's just {"raw": true, ...}
+		if _, isRaw := output["raw"]; !isRaw {
+			return s
+		}
+	}
+
+	return ""
+}
+
+// updateTaskGitInfo updates the task's git branch and records git timeline events
+func (e *FlowExecutor) updateTaskGitInfo(ctx context.Context, taskID, flowRunID, nodeRunID string, git *agent.GitMetadata) error {
+	// Update task git_branch
+	if err := e.db.UpdateTaskGitBranch(ctx, taskID, git.Branch); err != nil {
+		return fmt.Errorf("update task git branch: %w", err)
+	}
+
+	e.logger.Infow("Updated task git info",
+		"task_id", taskID,
+		"branch", git.Branch,
+		"commit", git.Commit,
+		"pr_url", git.PrUrl,
+		"changed_files", len(git.ChangedFiles),
+	)
+
+	// Record git_pushed timeline event
+	e.recordTimeline(ctx, taskID, flowRunID, nodeRunID, "git_pushed", map[string]any{
+		"branch":        git.Branch,
+		"base_branch":   git.BaseBranch,
+		"commit":        git.Commit,
+		"commit_message": git.CommitMessage,
+		"changed_files": git.ChangedFiles,
+		"message":       fmt.Sprintf("代码已推送到分支 %s", git.Branch),
+	})
+
+	// Record pr_created timeline event (if PR was created)
+	if git.PrUrl != "" {
+		e.recordTimeline(ctx, taskID, flowRunID, nodeRunID, "pr_created", map[string]any{
+			"pr_url":  git.PrUrl,
+			"branch":  git.Branch,
+			"message": fmt.Sprintf("已创建 PR: %s", git.PrUrl),
+		})
+	}
+
+	return nil
 }

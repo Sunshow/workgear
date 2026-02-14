@@ -2,7 +2,7 @@ FROM node:22-slim
 
 # Install git and other essentials
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git ca-certificates curl && \
+    apt-get install -y --no-install-recommends git ca-certificates curl jq && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI globally

@@ -1,9 +1,22 @@
 #!/bin/bash
 set -e
 
+# ─── Output Convention ───
+# All log messages go to stderr (for debugging)
+# Only the final JSON result goes to stdout (for structured parsing)
+# Git metadata is written to /output/git_metadata.json
+
+# Save original stdout (fd 3), then redirect stdout to stderr
+# so all echo statements go to stderr by default
+exec 3>&1 1>&2
+
 # ─── Configuration ───
 WORKSPACE="/workspace"
 RESULT_FILE="/output/result.json"
+GIT_METADATA_FILE="/output/git_metadata.json"
+
+# Initialize git metadata as empty
+echo '{}' > "$GIT_METADATA_FILE"
 
 echo "[agent] Starting ClaudeCode agent..."
 echo "[agent] Mode: ${AGENT_MODE:-execute}"
@@ -59,15 +72,17 @@ fi
 # Add output format
 CLAUDE_ARGS="$CLAUDE_ARGS --output-format json"
 
-# Execute claude with the prompt
+# Execute claude with the prompt (stdout → result file, stderr → log)
 $CLAUDE_CMD $CLAUDE_ARGS "$AGENT_PROMPT" > "$RESULT_FILE" 2>/tmp/claude_stderr.log || {
     EXIT_CODE=$?
-    echo "[agent] Claude CLI exited with code $EXIT_CODE" >&2
-    cat /tmp/claude_stderr.log >&2
-    # Output error as JSON
-    echo "{\"error\": \"claude exited with code $EXIT_CODE\", \"stderr\": \"$(cat /tmp/claude_stderr.log | head -c 2000)\"}"
+    echo "[agent] Claude CLI exited with code $EXIT_CODE"
+    cat /tmp/claude_stderr.log
+    # Output error as JSON to the real stdout (fd 3)
+    echo "{\"error\": \"claude exited with code $EXIT_CODE\", \"stderr\": \"$(cat /tmp/claude_stderr.log | head -c 2000 | sed 's/"/\\"/g')\"}" >&3
     exit $EXIT_CODE
 }
+
+echo "[agent] Claude CLI completed successfully."
 
 # ─── Helper: Create GitHub PR ───
 create_github_pr() {
@@ -183,14 +198,39 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
             PR_TITLE="${GIT_PR_TITLE:-$COMMIT_MSG}"
             create_github_pr "$FEATURE_BRANCH" "$BASE_BRANCH" "$PR_TITLE" "$COMMIT_MSG"
         fi
+
+        # ─── Record Git metadata ───
+        COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "")
+        PR_URL_VALUE=$(cat /output/pr_url.txt 2>/dev/null || echo "")
+        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | head -50 || echo "")
+
+        jq -n \
+            --arg branch "$FEATURE_BRANCH" \
+            --arg base_branch "$BASE_BRANCH" \
+            --arg commit "$COMMIT_HASH" \
+            --arg commit_msg "$COMMIT_MSG" \
+            --arg pr_url "$PR_URL_VALUE" \
+            --arg changed_files "$CHANGED_FILES" \
+            '{
+                branch: $branch,
+                base_branch: $base_branch,
+                commit: $commit,
+                commit_message: $commit_msg,
+                pr_url: $pr_url,
+                changed_files: ($changed_files | split("\n") | map(select(. != "")))
+            }' > "$GIT_METADATA_FILE"
+
+        echo "[agent] Git metadata written to $GIT_METADATA_FILE"
     else
         echo "[agent] No file changes detected."
     fi
 fi
 
-# ─── Step 4: Output result ───
+# ─── Step 4: Output result (to real stdout via fd 3) ───
 if [ -f "$RESULT_FILE" ]; then
-    cat "$RESULT_FILE"
+    cat "$RESULT_FILE" >&3
 else
-    echo '{"result": "completed", "summary": "Agent execution completed but no output file generated."}'
+    echo '{"result": "completed", "summary": "Agent execution completed but no output file generated."}' >&3
 fi
+
+echo "[agent] Done."

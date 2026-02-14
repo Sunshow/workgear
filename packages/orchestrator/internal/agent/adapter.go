@@ -36,8 +36,19 @@ type OpsxConfig struct {
 
 // AgentResponse represents the response from an agent
 type AgentResponse struct {
-	Output  map[string]any    `json:"output"`
-	Metrics *ExecutionMetrics `json:"metrics,omitempty"`
+	Output      map[string]any    `json:"output"`
+	Metrics     *ExecutionMetrics `json:"metrics,omitempty"`
+	GitMetadata *GitMetadata      `json:"git_metadata,omitempty"`
+}
+
+// GitMetadata holds Git operation results from agent execution
+type GitMetadata struct {
+	Branch        string   `json:"branch"`
+	BaseBranch    string   `json:"base_branch,omitempty"`
+	Commit        string   `json:"commit"`
+	CommitMessage string   `json:"commit_message,omitempty"`
+	PrUrl         string   `json:"pr_url,omitempty"`
+	ChangedFiles  []string `json:"changed_files,omitempty"`
 }
 
 // ExecutionMetrics tracks agent execution metrics
@@ -81,9 +92,10 @@ type ExecutorRequest struct {
 
 // ExecutorResponse is the runtime-layer response
 type ExecutorResponse struct {
-	ExitCode int
-	Stdout   string
-	Stderr   string
+	ExitCode    int
+	Stdout      string
+	Stderr      string
+	GitMetadata *GitMetadata // Extracted from /output/git_metadata.json in container
 }
 
 // CombinedAdapter bridges TypeAdapter + Executor into the Adapter interface

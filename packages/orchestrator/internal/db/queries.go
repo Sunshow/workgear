@@ -535,3 +535,43 @@ func (c *Client) CreateTimelineEvent(ctx context.Context, evt *TimelineEvent) er
 	`, evt.ID, evt.TaskID, evt.FlowRunID, evt.NodeRunID, evt.EventType, evt.Content, evt.CreatedAt)
 	return err
 }
+
+// ─── Artifact Queries ───
+
+// CreateArtifact creates a new artifact record
+func (c *Client) CreateArtifact(ctx context.Context, taskID, artifactType, title string) (string, error) {
+	var id string
+	err := c.pool.QueryRow(ctx, `
+		INSERT INTO artifacts (id, task_id, type, title, created_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, NOW())
+		RETURNING id
+	`, taskID, artifactType, title).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("create artifact: %w", err)
+	}
+	return id, nil
+}
+
+// CreateArtifactVersion creates a new version for an artifact
+func (c *Client) CreateArtifactVersion(ctx context.Context, artifactID string, version int, content, changeSummary, createdBy string) error {
+	_, err := c.pool.Exec(ctx, `
+		INSERT INTO artifact_versions (id, artifact_id, version, content, change_summary, created_by, created_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW())
+	`, artifactID, version, content, changeSummary, createdBy)
+	if err != nil {
+		return fmt.Errorf("create artifact version: %w", err)
+	}
+	return nil
+}
+
+// UpdateTaskGitBranch updates the git_branch field of a task
+func (c *Client) UpdateTaskGitBranch(ctx context.Context, taskID, branch string) error {
+	_, err := c.pool.Exec(ctx, `
+		UPDATE tasks SET git_branch = $2 WHERE id = $1
+	`, taskID, branch)
+	if err != nil {
+		return fmt.Errorf("update task git branch: %w", err)
+	}
+	return nil
+}
+

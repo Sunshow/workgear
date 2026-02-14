@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -144,17 +146,22 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 		return nil, fmt.Errorf("collect logs: %w", err)
 	}
 
+	// 6. Extract git metadata from container (before cleanup)
+	gitMetadata := e.extractGitMetadata(ctx, containerID)
+
 	e.logger.Infow("Agent container finished",
 		"container_id", containerID[:12],
 		"exit_code", exitCode,
 		"stdout_len", len(stdout),
 		"stderr_len", len(stderr),
+		"has_git_metadata", gitMetadata != nil,
 	)
 
 	return &ExecutorResponse{
-		ExitCode: exitCode,
-		Stdout:   stdout,
-		Stderr:   stderr,
+		ExitCode:    exitCode,
+		Stdout:      stdout,
+		Stderr:      stderr,
+		GitMetadata: gitMetadata,
 	}, nil
 }
 
@@ -194,6 +201,54 @@ func (e *DockerExecutor) collectLogs(ctx context.Context, containerID string) (s
 	}
 
 	return stdoutBuf.String(), stderrBuf.String(), nil
+}
+
+// extractGitMetadata reads /output/git_metadata.json from a stopped container
+func (e *DockerExecutor) extractGitMetadata(ctx context.Context, containerID string) *GitMetadata {
+	reader, _, err := e.cli.CopyFromContainer(ctx, containerID, "/output/git_metadata.json")
+	if err != nil {
+		e.logger.Debugw("No git metadata file in container", "error", err)
+		return nil
+	}
+	defer reader.Close()
+
+	// CopyFromContainer returns a tar archive; extract the file content
+	tr := tar.NewReader(reader)
+	for {
+		header, err := tr.Next()
+		if err != nil {
+			break
+		}
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			e.logger.Warnw("Failed to read git metadata from tar", "error", err)
+			return nil
+		}
+
+		var metadata GitMetadata
+		if err := json.Unmarshal(data, &metadata); err != nil {
+			e.logger.Warnw("Failed to parse git metadata JSON", "error", err, "raw", string(data))
+			return nil
+		}
+
+		// Skip empty metadata (no git operations happened)
+		if metadata.Branch == "" && metadata.Commit == "" {
+			return nil
+		}
+
+		e.logger.Infow("Extracted git metadata",
+			"branch", metadata.Branch,
+			"commit", metadata.Commit,
+			"pr_url", metadata.PrUrl,
+			"changed_files", len(metadata.ChangedFiles),
+		)
+		return &metadata
+	}
+
+	return nil
 }
 
 // Close releases the Docker client resources
