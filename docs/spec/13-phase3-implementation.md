@@ -454,7 +454,7 @@ packages/web/src/
 ├── hooks/
 │   ├── use-websocket.ts           # WebSocket 连接管理
 │   └── use-flow-subscription.ts   # FlowRun 事件订阅
-├── pages/board/task-detail/
+├── pages/kanban/task-detail/
 │   ├── review-panel.tsx           # 人工 Review 面板（approve/reject/edit）
 │   └── flow-tab.tsx               # 更新：实时显示节点状态
 ```

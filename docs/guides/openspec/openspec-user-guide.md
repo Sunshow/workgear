@@ -89,11 +89,15 @@ Agent 会自动：
 ```
 your-project/
 ├── openspec/
-│   ├── config.yaml          # 项目配置
-│   └── specs/               # Source of Truth
-│       ├── auth.md           # 认证模块规范
-│       ├── user-management.md # 用户管理规范
-│       └── ...               # 其他模块
+│   ├── config.yaml              # 项目配置（技术栈、约定、目录结构规范）
+│   └── specs/                   # Source of Truth（按功能模块分类）
+│       ├── auth/                # 认证模块
+│       │   └── 2026-02-14-user-auth.md
+│       ├── kanban/               # 看板模块
+│       │   └── 2026-02-14-task-lifecycle.md
+│       ├── flow-engine/         # 流程引擎模块
+│       │   └── 2026-02-14-dsl-parser.md
+│       └── ...                  # 其他功能模块
 ├── src/
 └── ...
 ```
@@ -135,14 +139,14 @@ your-project/
 
 Agent（spec-architect 角色）会自动：
 
-1. 克隆仓库，读取现有的 `openspec/specs/`（Source of Truth）
+1. 克隆仓库，读取现有的 `openspec/specs/`（Source of Truth，按功能模块分类）
 2. 创建 `openspec/changes/<变更名称>/` 目录
 3. 生成以下规划文档：
 
 | 文件 | 内容 |
 |------|------|
 | `proposal.md` | 为什么做、做什么、影响范围、风险评估 |
-| `specs/` | Delta spec 文件，描述新增/修改/删除的需求和场景（Given/When/Then 格式） |
+| `specs/` | Delta spec 文件，目录结构镜像 `openspec/specs/` 的模块分类，文件名格式 `<PREFIX>-YYYY-MM-DD-<capability>.md` |
 | `design.md` | 技术方案、数据流、涉及的文件变更清单 |
 | `tasks.md` | 按模块分组的实施任务清单（`[ ]` 复选框格式） |
 
@@ -191,7 +195,10 @@ Agent（code-reviewer 角色）会对照 Spec 文档审查代码：
 
 Agent 自动执行归档操作：
 
-1. 将 `openspec/changes/<变更名称>/specs/` 中的 delta specs 合并到 `openspec/specs/`（更新 Source of Truth）
+1. 读取 `openspec/changes/<变更名称>/specs/` 下的所有 delta spec 文件，按目录结构和文件前缀处理：
+   - `ADDED-*` 文件：去掉前缀，复制到 `openspec/specs/` 对应目录
+   - `MODIFIED-*` 文件：去掉前缀，覆盖 `openspec/specs/` 对应文件
+   - `REMOVED-*` 文件：删除 `openspec/specs/` 对应文件
 2. 将 `openspec/changes/<变更名称>/` 移动到 `openspec/changes/archive/`
 3. Commit 并 push
 
@@ -230,20 +237,28 @@ Agent 自动执行归档操作：
 ```
 your-project/
 └── openspec/
-    ├── config.yaml                    # 项目配置（技术栈、约定、规则）
-    ├── specs/                         # Source of Truth（当前完整规范）
-    │   ├── auth.md                    # 认证模块
-    │   ├── user-management.md         # 用户管理
-    │   └── ...
-    └── changes/                       # 变更目录
-        ├── add-dark-mode/             # 进行中的变更
-        │   ├── proposal.md            # 提案
-        │   ├── specs/                 # Delta specs
-        │   │   ├── ADDED-dark-mode-toggle.md
-        │   │   └── MODIFIED-theme-settings.md
-        │   ├── design.md              # 技术方案
-        │   └── tasks.md               # 任务清单
-        └── archive/                   # 已完成的变更归档
+    ├── config.yaml                         # 项目配置（技术栈、约定、目录结构规范）
+    ├── specs/                              # Source of Truth（按功能模块分类）
+    │   ├── auth/                           # 认证模块
+    │   │   └── 2026-02-08-user-auth.md
+    │   ├── kanban/                          # 看板模块
+    │   │   ├── 2026-02-10-kanban-drag-drop.md
+    │   │   └── 2026-02-12-task-lifecycle.md
+    │   ├── flow-engine/                    # 流程引擎模块
+    │   │   ├── 2026-02-14-dsl-parser.md
+    │   │   └── 2026-02-15-node-execution.md
+    │   └── agent/                          # Agent 集成模块
+    │       └── 2026-02-13-claude-adapter.md
+    └── changes/                            # 变更目录
+        ├── add-dark-mode/                  # 进行中的变更
+        │   ├── proposal.md                 # 提案
+        │   ├── specs/                      # Delta specs（镜像 specs/ 的目录结构）
+        │   │   └── ui/
+        │   │       ├── ADDED-2026-02-14-dark-mode-toggle.md
+        │   │       └── MODIFIED-2026-02-14-theme-settings.md
+        │   ├── design.md                   # 技术方案
+        │   └── tasks.md                    # 任务清单
+        └── archive/                        # 已完成的变更归档
             └── fix-login-timeout/
                 ├── proposal.md
                 ├── specs/
@@ -255,9 +270,11 @@ your-project/
 
 | 概念 | 说明 |
 |------|------|
-| Source of Truth | `openspec/specs/` 目录，包含项目当前的完整功能规范 |
+| Source of Truth | `openspec/specs/` 目录，按功能模块分类，包含项目当前的完整功能规范 |
+| 模块目录 | `openspec/specs/<module>/`，每个功能模块一个子目录 |
+| 文件命名 | `YYYY-MM-DD-<capability>.md`，日期 + 功能描述，便于按时间排序 |
 | Change | 一次变更的完整规划，存放在 `openspec/changes/<name>/` |
-| Delta Spec | 变更中新增/修改/删除的需求，文件名以 ADDED/MODIFIED/REMOVED 开头 |
+| Delta Spec | 变更中新增/修改/删除的需求，文件名以 ADDED/MODIFIED/REMOVED 开头，目录结构镜像 specs/ |
 | Archive | 已完成的变更归档，delta specs 已合并到 Source of Truth |
 
 ---
@@ -338,8 +355,8 @@ opsx:
 
 ### Q: 归档后发现 Spec 有问题怎么办？
 
-归档操作会将 delta specs 合并到 `openspec/specs/`。如果发现问题：
-1. 可以手动编辑 `openspec/specs/` 中的文件并 commit
+归档操作会将 delta specs 按目录结构合并到 `openspec/specs/`。如果发现问题：
+1. 可以手动编辑 `openspec/specs/<module>/` 中的文件并 commit
 2. 或者创建一个新的 change 来修正 Spec
 
 ### Q: 如何查看历史变更？

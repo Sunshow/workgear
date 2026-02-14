@@ -47,7 +47,7 @@
 | [02-architecture.md](./02-architecture.md) | 整体架构、服务职责、通信协议、桌面端架构 |
 | [03-flow-engine.md](./03-flow-engine.md) | 流程DSL设计、节点类型、状态机、打回机制、表达式系统、多Agent协同节点 |
 | [04-agent-layer.md](./04-agent-layer.md) | Agent Adapter接口、ClaudeCode/Droid/Human适配器、Agent Registry、协同协议 |
-| [05-board-flow-integration.md](./05-board-flow-integration.md) | 看板与流程融合、Task生命周期、Git集成、消息时间线、产物追溯 |
+| [05-kanban-flow-integration.md](./05-kanban-flow-integration.md) | 看板与流程融合、Task生命周期、Git集成、消息时间线、产物追溯 |
 | [06-data-model.md](./06-data-model.md) | 完整数据库表结构（PostgreSQL）、产物模型、Outbox模式 |
 | [07-roadmap.md](./07-roadmap.md) | Phase A-C + Phase 1-4 迭代计划、项目结构、技术选型汇总 |
 | [08-api-design.md](./08-api-design.md) | REST API、WebSocket事件、gRPC Proto定义、产物/协同/检查点API |

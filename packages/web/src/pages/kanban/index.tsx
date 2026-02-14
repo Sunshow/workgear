@@ -3,18 +3,18 @@ import { useParams, useNavigate } from 'react-router'
 import { DndContext, DragEndEvent, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { api } from '@/lib/api'
-import type { Board, BoardColumn, Task, Project } from '@/lib/types'
-import { useBoardStore } from '@/stores/board-store'
+import type { Kanban, KanbanColumn, Task, Project } from '@/lib/types'
+import { useKanbanStore } from '@/stores/kanban-store'
 import { Button } from '@/components/ui/button'
-import { BoardColumnComponent } from './board-column'
+import { KanbanColumnComponent } from './kanban-column'
 import { CreateTaskDialog } from './create-task-dialog'
 import { TaskCard } from './task-card'
 import { TaskDetail } from './task-detail'
 
-export function BoardPage() {
+export function KanbanPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
-  const { board, columns, tasks, setBoard, setColumns, setTasks, moveTask } = useBoardStore()
+  const { kanban, columns, tasks, setKanban, setColumns, setTasks, moveTask } = useKanbanStore()
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
@@ -33,24 +33,24 @@ export function BoardPage() {
 
   useEffect(() => {
     if (projectId) {
-      loadBoardData()
+      loadKanbanData()
     }
   }, [projectId])
 
-  async function loadBoardData() {
+  async function loadKanbanData() {
     try {
       // Load project
       const projectData = await api.get(`projects/${projectId}`).json<Project>()
       setProject(projectData)
 
-      // Load boards
-      const boardsData = await api.get('boards', { searchParams: { projectId: projectId! } }).json<Board[]>()
-      if (boardsData.length > 0) {
-        const boardData = boardsData[0]
-        setBoard(boardData)
+      // Load kanbans
+      const kanbansData = await api.get('kanbans', { searchParams: { projectId: projectId! } }).json<Kanban[]>()
+      if (kanbansData.length > 0) {
+        const kanbanData = kanbansData[0]
+        setKanban(kanbanData)
 
         // Load columns
-        const columnsData = await api.get(`boards/${boardData.id}/columns`).json<{ board: Board; columns: BoardColumn[] }>()
+        const columnsData = await api.get(`kanbans/${kanbanData.id}/columns`).json<{ kanban: Kanban; columns: KanbanColumn[] }>()
         setColumns(columnsData.columns)
 
         // Load tasks
@@ -58,7 +58,7 @@ export function BoardPage() {
         setTasks(tasksData)
       }
     } catch (error) {
-      console.error('Failed to load board data:', error)
+      console.error('Failed to load kanban data:', error)
     } finally {
       setLoading(false)
     }
@@ -139,7 +139,7 @@ export function BoardPage() {
     } catch (error) {
       console.error('Failed to move task:', error)
       // Revert on error
-      loadBoardData()
+      loadKanbanData()
     }
   }
 
@@ -151,7 +151,7 @@ export function BoardPage() {
     )
   }
 
-  if (!board || columns.length === 0) {
+  if (!kanban || columns.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">看板数据加载失败</p>
@@ -188,7 +188,7 @@ export function BoardPage() {
               .filter((task) => task.columnId === column.id)
               .sort((a, b) => a.position - b.position)
             return (
-              <BoardColumnComponent
+              <KanbanColumnComponent
                 key={column.id}
                 column={column}
                 tasks={columnTasks}
@@ -210,7 +210,7 @@ export function BoardPage() {
           onOpenChange={setCreateTaskDialogOpen}
           projectId={projectId!}
           columnId={selectedColumnId}
-          onSuccess={loadBoardData}
+          onSuccess={loadKanbanData}
         />
       )}
 
@@ -218,7 +218,7 @@ export function BoardPage() {
         task={selectedTask}
         open={detailOpen}
         onOpenChange={setDetailOpen}
-        onDeleted={loadBoardData}
+        onDeleted={loadKanbanData}
       />
     </DndContext>
   )

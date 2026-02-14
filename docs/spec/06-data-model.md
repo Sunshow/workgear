@@ -3,7 +3,7 @@
 ## 6.1 ER 关系概览
 
 ```
-User ──┬──< ProjectMember >──┬── Project ──┬──< Board
+User ──┬──< ProjectMember >──┬── Project ──┬──< Kanban
        │                     │             ├──< Workflow (流程模板)
        │                     │             ├──< AgentConfig
        │                     │             └──< GitRepo
@@ -88,7 +88,7 @@ CREATE TABLE flow_runs (
     status      VARCHAR(20) NOT NULL DEFAULT 'pending'
                 CHECK (status IN ('pending','running','paused','completed','failed','cancelled')),
     variables   JSONB DEFAULT '{}',    -- 运行时变量
-    trigger_type VARCHAR(20),          -- manual / board_event / webhook / desktop
+    trigger_type VARCHAR(20),          -- manual / kanban_event / webhook / desktop
     trigger_data JSONB,
     
     -- 运行域（R4 新增）
@@ -191,7 +191,7 @@ CREATE TABLE node_run_history (
 
 ```sql
 -- 看板
-CREATE TABLE boards (
+CREATE TABLE kanbans (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id  UUID REFERENCES projects(id) ON DELETE CASCADE,
     name        VARCHAR(200) NOT NULL,
@@ -201,24 +201,24 @@ CREATE TABLE boards (
 );
 
 -- 看板列
-CREATE TABLE board_columns (
+CREATE TABLE kanban_columns (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    board_id    UUID REFERENCES boards(id) ON DELETE CASCADE,
+    kanban_id    UUID REFERENCES kanbans(id) ON DELETE CASCADE,
     name        VARCHAR(100) NOT NULL,
     slug        VARCHAR(50) NOT NULL,
     color       VARCHAR(7),
     position    INTEGER NOT NULL,
     flow_stage  VARCHAR(50),           -- 映射的流程阶段
     wip_limit   INTEGER,               -- WIP限制
-    UNIQUE(board_id, slug)
+    UNIQUE(kanban_id, slug)
 );
 
 -- 任务
 CREATE TABLE tasks (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id  UUID REFERENCES projects(id) ON DELETE CASCADE,
-    board_id    UUID REFERENCES boards(id),
-    column_id   UUID REFERENCES board_columns(id),
+    kanban_id    UUID REFERENCES kanbans(id),
+    column_id   UUID REFERENCES kanban_columns(id),
     
     -- 基本信息
     title       VARCHAR(500) NOT NULL,

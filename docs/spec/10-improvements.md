@@ -110,7 +110,7 @@
 - 流程引擎集成：节点配置 `artifact` 后自动创建/更新 Artifact
 - 前端集成：Task 详情新增"产物"标签页，追溯链路可视化
 
-**变更文件**：`05-board-flow-integration.md` §5.4、§5.7；`06-data-model.md` 产物模型；`08-api-design.md` 产物 API
+**变更文件**：`05-kanban-flow-integration.md` §5.4、§5.7；`06-data-model.md` 产物模型；`08-api-design.md` 产物 API
 
 ---
 

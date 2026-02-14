@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt'
 import { db } from '../db/index.js'
 import { client } from '../db/index.js'
-import { users, projects, projectMembers, boards, boardColumns } from '../db/schema.js'
+import { users, projects, projectMembers, kanbans, kanbanColumns } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@workgear.dev'
@@ -56,16 +56,16 @@ async function seedBootstrap() {
     })
 
     // 创建默认看板
-    const [board] = await db.insert(boards).values({
+    const [kanban] = await db.insert(kanbans).values({
       projectId: project.id,
       name: 'Default Board',
     }).returning()
 
     // 创建默认列
     const defaultColumns = ['Backlog', 'In Progress', 'Review', 'Done']
-    await db.insert(boardColumns).values(
+    await db.insert(kanbanColumns).values(
       defaultColumns.map((colName, idx) => ({
-        boardId: board.id,
+        kanbanId: kanban.id,
         name: colName,
         position: idx,
       }))

@@ -85,7 +85,7 @@ export function ProjectsPage() {
               <Card
                 key={project.id}
                 className="cursor-pointer transition-shadow hover:shadow-md"
-                onClick={() => navigate(`/projects/${project.id}/board`)}
+                onClick={() => navigate(`/projects/${project.id}/kanban`)}
               >
                 <CardHeader>
                   <div className="flex items-start justify-between">

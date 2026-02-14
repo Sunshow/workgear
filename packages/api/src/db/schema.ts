@@ -56,7 +56,7 @@ export const projectMembers = pgTable('project_members', {
 // ============================================================
 // 看板表
 // ============================================================
-export const boards = pgTable('boards', {
+export const kanbans = pgTable('kanbans', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 200 }).notNull(),
@@ -66,14 +66,14 @@ export const boards = pgTable('boards', {
 // ============================================================
 // 看板列
 // ============================================================
-export const boardColumns = pgTable('board_columns', {
+export const kanbanColumns = pgTable('kanban_columns', {
   id: uuid('id').primaryKey().defaultRandom(),
-  boardId: uuid('board_id').notNull().references(() => boards.id, { onDelete: 'cascade' }),
+  kanbanId: uuid('kanban_id').notNull().references(() => kanbans.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 100 }).notNull(),
   position: integer('position').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  unique('board_columns_board_id_position_unique').on(table.boardId, table.position),
+  unique('kanban_columns_kanban_id_position_unique').on(table.kanbanId, table.position),
 ])
 
 // ============================================================
@@ -82,7 +82,7 @@ export const boardColumns = pgTable('board_columns', {
 export const tasks = pgTable('tasks', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  columnId: uuid('column_id').notNull().references(() => boardColumns.id),
+  columnId: uuid('column_id').notNull().references(() => kanbanColumns.id),
   title: varchar('title', { length: 500 }).notNull(),
   description: text('description'),
   position: integer('position').notNull(),

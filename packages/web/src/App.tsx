@@ -4,7 +4,7 @@ import { AuthGuard } from './components/auth-guard'
 import { LoginPage } from './pages/auth/login'
 import { RegisterPage } from './pages/auth/register'
 import { ProjectsPage } from './pages/projects'
-import { BoardPage } from './pages/board'
+import { KanbanPage } from './pages/kanban'
 import { WorkflowsPage } from './pages/workflows'
 import { WorkflowEditorPage } from './pages/workflows/workflow-editor'
 import { ExplorePage } from './pages/explore'
@@ -21,7 +21,7 @@ function App() {
         <Route path="/" element={<AuthGuard><MainLayout /></AuthGuard>}>
           <Route index element={<Navigate to="/projects" replace />} />
           <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/:projectId/board" element={<BoardPage />} />
+          <Route path="projects/:projectId/kanban" element={<KanbanPage />} />
           <Route path="projects/:projectId/workflows" element={<WorkflowsPage />} />
           <Route path="projects/:projectId/workflows/:workflowId/edit" element={<WorkflowEditorPage />} />
           <Route path="explore" element={<ExplorePage />} />

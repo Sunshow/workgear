@@ -44,7 +44,11 @@ nodes:
         你需要：
         1. 创建 OpenSpec change: {{nodes.submit_requirement.outputs.change_name}}
         2. 生成 proposal.md（为什么做、做什么、影响范围）
-        3. 生成 delta specs（使用 Given/When/Then 格式，标注 ADDED/MODIFIED/REMOVED）
+        3. 生成 delta specs：
+           - 目录结构镜像 openspec/specs/ 的模块分类
+           - 文件名格式：<PREFIX>-YYYY-MM-DD-<capability>.md
+           - PREFIX 为 ADDED（新增功能）/ MODIFIED（修改现有功能）/ REMOVED（删除功能）
+           - 使用 Given/When/Then 格式描述场景
         4. 生成 design.md（技术方案、数据流、文件变更清单）
         5. 生成 tasks.md（按模块分组的实施任务清单，使用 [ ] 复选框格式）
 
@@ -157,9 +161,13 @@ nodes:
         请归档已完成的 OpenSpec 变更：{{nodes.submit_requirement.outputs.change_name}}
 
         操作步骤：
-        1. 将 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/ 中的 delta specs 合并到 openspec/specs/（Source of Truth）
-        2. 将 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/ 移动到 openspec/changes/archive/
-        3. 确保 openspec/specs/ 中的内容是最新的完整规范
+        1. 读取 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/specs/ 下的所有 delta spec 文件
+        2. 按照目录结构和文件前缀处理：
+           - ADDED-* 文件：去掉 ADDED- 前缀，复制到 openspec/specs/ 对应目录
+           - MODIFIED-* 文件：去掉 MODIFIED- 前缀，覆盖 openspec/specs/ 对应文件
+           - REMOVED-* 文件：删除 openspec/specs/ 对应文件（文件名去掉 REMOVED- 前缀）
+        3. 将 openspec/changes/{{nodes.submit_requirement.outputs.change_name}}/ 移动到 openspec/changes/archive/
+        4. 确保 openspec/specs/ 中的内容是最新的完整规范
     timeout: 300s
 
 edges:

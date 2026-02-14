@@ -1,14 +1,14 @@
 import type { FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { boards, boardColumns } from '../db/schema.js'
+import { kanbans, kanbanColumns } from '../db/schema.js'
 import { authenticate } from '../middleware/auth.js'
 
-export async function boardRoutes(app: FastifyInstance) {
+export async function kanbanRoutes(app: FastifyInstance) {
   // 获取项目的看板
   app.get<{ Querystring: { projectId: string } }>('/', { preHandler: [authenticate] }, async (request) => {
     const { projectId } = request.query
-    const result = await db.select().from(boards).where(eq(boards.projectId, projectId))
+    const result = await db.select().from(kanbans).where(eq(kanbans.projectId, projectId))
     return result
   })
 
@@ -16,16 +16,16 @@ export async function boardRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>('/:id/columns', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params
 
-    const board = await db.select().from(boards).where(eq(boards.id, id))
-    if (board.length === 0) {
-      return reply.status(404).send({ error: 'Board not found' })
+    const kanban = await db.select().from(kanbans).where(eq(kanbans.id, id))
+    if (kanban.length === 0) {
+      return reply.status(404).send({ error: 'Kanban not found' })
     }
 
     const columns = await db.select()
-      .from(boardColumns)
-      .where(eq(boardColumns.boardId, id))
-      .orderBy(boardColumns.position)
+      .from(kanbanColumns)
+      .where(eq(kanbanColumns.kanbanId, id))
+      .orderBy(kanbanColumns.position)
 
-    return { board: board[0], columns }
+    return { kanban: kanban[0], columns }
   })
 }

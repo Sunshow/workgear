@@ -81,7 +81,7 @@ scripts/         → 工具脚本
 | 了解整体架构 | `docs/spec/02-architecture.md` | 服务职责、通信协议、部署架构 |
 | 开发流程引擎 | `docs/spec/03-flow-engine.md` | DSL 设计、节点类型、状态机、打回机制 |
 | 接入 Agent | `docs/spec/04-agent-layer.md` | Adapter 接口、ClaudeCode 适配器 |
-| 开发看板功能 | `docs/spec/05-board-flow-integration.md` | 看板与流程融合、Task 生命周期 |
+| 开发看板功能 | `docs/spec/05-kanban-flow-integration.md` | 看板与流程融合、Task 生命周期 |
 | 修改数据库 | `docs/spec/06-data-model.md` | 完整表结构设计、产物模型 |
 | 开发 API | `docs/spec/08-api-design.md` | REST API、WebSocket 事件、gRPC Proto |
 | 了解实现细节 | `docs/spec/09-implementation-details.md` | 执行器、Outbox Worker、WebSocket 推送 |

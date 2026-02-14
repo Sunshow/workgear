@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { api } from '@/lib/api'
 import type { CreateTaskDto, Task } from '@/lib/types'
-import { useBoardStore } from '@/stores/board-store'
+import { useKanbanStore } from '@/stores/kanban-store'
 import {
   Dialog,
   DialogContent,
@@ -25,7 +25,7 @@ interface CreateTaskDialogProps {
 }
 
 export function CreateTaskDialog({ open, onOpenChange, projectId, columnId, onSuccess }: CreateTaskDialogProps) {
-  const { addTask } = useBoardStore()
+  const { addTask } = useKanbanStore()
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, reset, formState: { errors } } = useForm<CreateTaskDto>()
 

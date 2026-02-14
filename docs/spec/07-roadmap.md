@@ -128,7 +128,7 @@ workgear/
 │   │   ├── src/
 │   │   │   ├── app/
 │   │   │   ├── components/
-│   │   │   │   ├── board/         # 看板组件
+│   │   │   │   ├── kanban/         # 看板组件
 │   │   │   │   ├── timeline/      # 消息时间线
 │   │   │   │   ├── flow/          # 流程可视化（只读）
 │   │   │   │   └── common/

@@ -6,7 +6,7 @@
 看板概念          流程概念              关系
 ─────────────────────────────────────────────
 Project       →  WorkflowRegistry     1个项目包含多个可用流程模板
-Board         →  -                    看板是项目的视图层
+Kanban        →  -                    看板是项目的视图层
 Column        →  FlowStage            列对应流程的阶段
 Task          →  FlowRun + NodeRun    任务启动时创建流程实例
 SubTask       →  NodeRun              子任务对应流程中的节点执行
@@ -16,8 +16,8 @@ Label/Tag     →  AgentRole            标签可映射到Agent角色
 ## 5.2 看板列与流程阶段自动映射
 
 ```yaml
-# board-config.yaml
-board:
+# kanban-config.yaml
+kanban:
   name: "开发看板"
   columns:
     - id: backlog

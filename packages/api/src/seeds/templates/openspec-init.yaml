@@ -22,11 +22,20 @@ nodes:
 
         1. 运行 openspec init 初始化目录结构
         2. 分析项目的 README.md、package.json、目录结构等，了解项目技术栈和架构
-        3. 生成合适的 openspec/config.yaml 配置文件
-        4. 为项目现有的核心功能编写初始 specs（Source of Truth），放在 openspec/specs/ 目录下
-        5. 使用 Given/When/Then 格式描述已有功能的行为规范
+        3. 生成 openspec/config.yaml 配置文件，包含以下内容：
+           - schema: spec-driven
+           - context: 项目的技术栈、架构说明、目录结构规范
+           - 添加 Specs 目录结构说明（按功能模块分类，文件名包含日期）
+        4. 识别项目的主要功能模块（如 flow-engine、kanban、agent、auth 等）
+        5. 为每个模块创建对应的 specs/<module>/ 子目录
+        6. 为项目现有的核心功能编写初始 specs（Source of Truth），放在对应模块目录下
+        7. Spec 文件命名格式：YYYY-MM-DD-<capability>.md（使用今天的日期）
+        8. 使用 Given/When/Then 格式描述已有功能的行为规范
 
-        注意：这是首次初始化，请确保 specs 覆盖项目的主要功能模块。
+        注意：
+        - 这是首次初始化，请确保 specs 覆盖项目的主要功能模块
+        - 模块划分应该清晰、合理，避免过度细分
+        - 每个 spec 文件应该聚焦一个独立的功能或能力
     timeout: 600s
 
   - id: review_init

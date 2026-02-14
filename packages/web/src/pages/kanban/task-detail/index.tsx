@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Pencil, Trash2, Play } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Task } from '@/lib/types'
-import { useBoardStore } from '@/stores/board-store'
+import { useKanbanStore } from '@/stores/kanban-store'
 import {
   Sheet,
   SheetContent,
@@ -28,7 +28,7 @@ interface TaskDetailProps {
 }
 
 export function TaskDetail({ task, open, onOpenChange, onDeleted }: TaskDetailProps) {
-  const { updateTask, removeTask } = useBoardStore()
+  const { updateTask, removeTask } = useKanbanStore()
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')

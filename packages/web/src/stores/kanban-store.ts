@@ -1,12 +1,12 @@
 import { create } from 'zustand'
-import type { Board, BoardColumn, Task } from '@/lib/types'
+import type { Kanban, KanbanColumn, Task } from '@/lib/types'
 
-interface BoardStore {
-  board: Board | null
-  columns: BoardColumn[]
+interface KanbanStore {
+  kanban: Kanban | null
+  columns: KanbanColumn[]
   tasks: Task[]
-  setBoard: (board: Board | null) => void
-  setColumns: (columns: BoardColumn[]) => void
+  setKanban: (kanban: Kanban | null) => void
+  setColumns: (columns: KanbanColumn[]) => void
   setTasks: (tasks: Task[]) => void
   addTask: (task: Task) => void
   updateTask: (id: string, updates: Partial<Task>) => void
@@ -14,11 +14,11 @@ interface BoardStore {
   moveTask: (taskId: string, columnId: string, position: number) => void
 }
 
-export const useBoardStore = create<BoardStore>((set) => ({
-  board: null,
+export const useKanbanStore = create<KanbanStore>((set) => ({
+  kanban: null,
   columns: [],
   tasks: [],
-  setBoard: (board) => set({ board }),
+  setKanban: (kanban) => set({ kanban }),
   setColumns: (columns) => set({ columns }),
   setTasks: (tasks) => set({ tasks }),
   addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),

@@ -5,7 +5,7 @@ import websocket from '@fastify/websocket'
 import jwt from '@fastify/jwt'
 import cookie from '@fastify/cookie'
 import { projectRoutes } from './routes/projects.js'
-import { boardRoutes } from './routes/boards.js'
+import { kanbanRoutes } from './routes/kanbans.js'
 import { taskRoutes } from './routes/tasks.js'
 import { healthRoutes } from './routes/health.js'
 import { workflowTemplateRoutes } from './routes/workflow-templates.js'
@@ -41,7 +41,7 @@ await app.register(websocket)
 await app.register(healthRoutes, { prefix: '/api' })
 await app.register(authRoutes, { prefix: '/api/auth' })
 await app.register(projectRoutes, { prefix: '/api/projects' })
-await app.register(boardRoutes, { prefix: '/api/boards' })
+await app.register(kanbanRoutes, { prefix: '/api/kanbans' })
 await app.register(taskRoutes, { prefix: '/api/tasks' })
 await app.register(workflowTemplateRoutes, { prefix: '/api/workflow-templates' })
 await app.register(workflowRoutes, { prefix: '/api/workflows' })

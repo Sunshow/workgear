@@ -1,19 +1,19 @@
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Plus } from 'lucide-react'
-import type { BoardColumn, Task } from '@/lib/types'
+import type { KanbanColumn, Task } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { TaskCard } from './task-card'
 import { cn } from '@/lib/utils'
 
-interface BoardColumnProps {
-  column: BoardColumn
+interface KanbanColumnProps {
+  column: KanbanColumn
   tasks: Task[]
   onCreateTask: () => void
   onTaskClick?: (task: Task) => void
 }
 
-export function BoardColumnComponent({ column, tasks, onCreateTask, onTaskClick }: BoardColumnProps) {
+export function KanbanColumnComponent({ column, tasks, onCreateTask, onTaskClick }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
   })

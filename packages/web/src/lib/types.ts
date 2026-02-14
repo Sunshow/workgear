@@ -19,17 +19,17 @@ export interface CreateProjectDto {
   visibility?: 'private' | 'public'
 }
 
-// Board types
-export interface Board {
+// Kanban types
+export interface Kanban {
   id: string
   projectId: string
   name: string
   createdAt: string
 }
 
-export interface BoardColumn {
+export interface KanbanColumn {
   id: string
-  boardId: string
+  kanbanId: string
   name: string
   position: number
   createdAt: string

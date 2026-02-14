@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { eq, or, inArray } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { projects, boards, boardColumns, projectMembers } from '../db/schema.js'
+import { projects, kanbans, kanbanColumns, projectMembers } from '../db/schema.js'
 import { authenticate, optionalAuth, requireProjectAccess } from '../middleware/auth.js'
 
 export async function projectRoutes(app: FastifyInstance) {
@@ -94,16 +94,16 @@ export async function projectRoutes(app: FastifyInstance) {
     })
 
     // 创建默认看板
-    const [board] = await db.insert(boards).values({
+    const [kanban] = await db.insert(kanbans).values({
       projectId: project.id,
       name: 'Default Board',
     }).returning()
 
     // 创建默认列
     const defaultColumns = ['Backlog', 'In Progress', 'Review', 'Done']
-    await db.insert(boardColumns).values(
+    await db.insert(kanbanColumns).values(
       defaultColumns.map((colName, idx) => ({
-        boardId: board.id,
+        kanbanId: kanban.id,
         name: colName,
         position: idx,
       }))

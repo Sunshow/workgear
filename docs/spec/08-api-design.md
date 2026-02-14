@@ -22,11 +22,11 @@ POST   /api/projects/:id/members        # 添加成员
 
 ### 看板
 ```
-GET    /api/projects/:id/boards         # 看板列表
-POST   /api/projects/:id/boards         # 创建看板
-GET    /api/boards/:id                  # 看板详情（含列和任务）
-PUT    /api/boards/:id                  # 更新看板
-PUT    /api/boards/:id/columns/reorder  # 列排序
+GET    /api/projects/:id/kanbans         # 看板列表
+POST   /api/projects/:id/kanbans         # 创建看板
+GET    /api/kanbans/:id                  # 看板详情（含列和任务）
+PUT    /api/kanbans/:id                  # 更新看板
+PUT    /api/kanbans/:id/columns/reorder  # 列排序
 ```
 
 ### 任务
@@ -114,7 +114,7 @@ interface WSClientMessage {
   // project:{id}           - 项目级事件
   // task:{id}              - 任务级事件
   // flow-run:{id}          - 流程实例级事件
-  // board:{id}             - 看板级事件
+  // kanban:{id}             - 看板级事件
 }
 
 // 服务端 → 客户端

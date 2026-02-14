@@ -162,14 +162,21 @@ func modeInstruction(mode string) string {
 2. 创建新的 change（使用环境变量 OPSX_CHANGE_NAME 指定的名称）
 3. 生成所有规划 artifact：
    - proposal.md（为什么做、做什么、影响范围）
-   - specs/ 目录下的 delta spec 文件（使用 Given/When/Then 格式，标注 ADDED/MODIFIED/REMOVED）
+   - specs/ 目录下的 delta spec 文件：
+     * 目录结构镜像 openspec/specs/ 的模块分类（按功能模块组织子目录）
+     * 文件名格式：<PREFIX>-YYYY-MM-DD-<capability>.md
+     * PREFIX 为 ADDED / MODIFIED / REMOVED
+     * 使用 Given/When/Then 格式，标注功能场景
    - design.md（技术方案、数据流、文件变更清单）
    - tasks.md（按模块分组的实施任务清单，使用 [ ] 复选框格式）
 4. 确保所有文件都已保存到 openspec/changes/<change-name>/ 目录下
 5. 所有变更都要 git add
 
 注意：如果环境变量 OPSX_ACTION 为 "archive"，则执行归档操作：
-- 将 delta specs 合并到 openspec/specs/（Source of Truth）
+- 读取 openspec/changes/<change-name>/specs/ 下的所有 delta spec 文件
+- ADDED-* 文件：去掉前缀，复制到 openspec/specs/ 对应目录
+- MODIFIED-* 文件：去掉前缀，覆盖 openspec/specs/ 对应文件
+- REMOVED-* 文件：删除 openspec/specs/ 对应文件
 - 将变更目录移到 openspec/changes/archive/`
 	case "opsx_apply":
 		return `当前模式：OpenSpec 实施（opsx_apply）
