@@ -1,0 +1,70 @@
+schema: spec-driven
+
+context: |
+  # WorkGear - AI Agent 工作流编排平台
+
+  ## 技术栈
+  - 运行时: Node.js >= 22, pnpm 10 (monorepo)
+  - 前端: React 19 + Vite 7 + Tailwind CSS 4 + TypeScript 5.9
+  - UI: Shadcn/ui (Radix UI) + @xyflow/react + @dnd-kit + Monaco Editor
+  - 状态管理: Zustand 5 + React Router 7
+  - API: Fastify 5 + Drizzle ORM 1.0-beta + PostgreSQL 18
+  - 调度: Go 1.26 + gRPC 1.78
+  - 缓存: Redis 8.4
+  - Agent 运行时: Docker 容器化 ClaudeCode
+
+  ## 架构
+  浏览器 → Vite(:3000) --/api代理-→ Fastify(:4000) --gRPC-→ Go Orchestrator(:50051)
+                                         ↓
+                                    PostgreSQL(:5432) + Redis(:6379)
+
+  ## 项目结构
+  packages/
+    web/           → React 前端 (@workgear/web)
+    api/           → Fastify API Server (@workgear/api)
+    orchestrator/  → Go gRPC 调度服务
+    shared/        → 共享 Protobuf 定义
+  docker/          → Docker Compose (PostgreSQL + Redis)
+  docs/            → 产品需求 + 技术规格文档
+  scripts/         → 工具脚本
+
+  ## 代码规范
+  - TypeScript strict 模式，全部 ESM，import 路径带 .js 扩展名
+  - 类型导入使用 import type
+  - Drizzle ORM beta API: drizzle({ client, schema })
+  - Fastify 路由使用 plugin 模式注册
+  - Go 标准项目布局 (cmd/ + internal/)
+  - Tailwind CSS 4: @import "tailwindcss" + @theme inline
+
+  ## 数据库
+  Schema 唯一定义: packages/api/src/db/schema.ts (17+ 张表)
+  Protobuf 定义: packages/shared/proto/orchestrator.proto
+
+# Specs 目录结构说明
+# openspec/specs/ 按功能模块分类：
+#   auth/          - 用户认证与授权
+#   project/       - 项目管理
+#   kanban/        - 看板与任务管理
+#   flow-engine/   - 工作流引擎（DSL、状态机、节点类型）
+#   agent/         - Agent 编排与执行
+#   artifact/      - 产物管理与版本追踪
+#   api/           - REST API 与 WebSocket
+#   orchestrator/  - Go gRPC 调度服务
+#
+# 文件命名格式: YYYY-MM-DD-<capability>.md
+# 使用 Given/When/Then 格式描述行为规范
+
+rules:
+  proposal:
+    - 必须包含「背景」「目标」「影响范围」「非目标」四个部分
+    - 影响范围需列出受影响的 packages 和文件
+  specs:
+    - 使用 Given/When/Then 格式描述行为
+    - 标注 ADDED / MODIFIED / REMOVED 前缀
+    - 每个 spec 文件聚焦一个独立功能或能力
+  design:
+    - 包含数据流图、文件变更清单
+    - 标注技术选型理由
+  tasks:
+    - 按模块分组，使用 [ ] 复选框格式
+    - 每个任务预估工作量（S/M/L）
