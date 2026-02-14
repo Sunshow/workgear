@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { api } from '@/lib/api'
 import type { Project } from '@/lib/types'
@@ -18,42 +18,65 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 
-interface CreateProjectDialogProps {
+interface EditProjectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  project: Project
   onSuccess?: () => void
 }
 
-interface CreateProjectForm {
+interface EditProjectForm {
   name: string
-  description?: string
-  gitRepoUrl?: string
-  gitAccessToken?: string
+  description: string
+  gitRepoUrl: string
+  gitAccessToken: string
   autoMergePr: boolean
   visibility: 'private' | 'public'
 }
 
-export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreateProjectDialogProps) {
-  const { addProject } = useProjectStore()
+export function EditProjectDialog({ open, onOpenChange, project, onSuccess }: EditProjectDialogProps) {
+  const { updateProject } = useProjectStore()
   const [loading, setLoading] = useState(false)
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CreateProjectForm>({
-    defaultValues: { visibility: 'private', autoMergePr: false }
-  })
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<EditProjectForm>()
 
   const visibility = watch('visibility')
   const autoMergePr = watch('autoMergePr')
 
-  async function onSubmit(data: CreateProjectForm) {
+  useEffect(() => {
+    if (open) {
+      reset({
+        name: project.name,
+        description: project.description || '',
+        gitRepoUrl: project.gitRepoUrl || '',
+        gitAccessToken: '',
+        autoMergePr: project.autoMergePr,
+        visibility: project.visibility,
+      })
+    }
+  }, [open, project, reset])
+
+  async function onSubmit(data: EditProjectForm) {
     setLoading(true)
     try {
-      const project = await api.post('projects', { json: data }).json<Project>()
-      addProject(project)
-      reset()
+      const payload: Record<string, unknown> = {
+        name: data.name,
+        description: data.description || null,
+        gitRepoUrl: data.gitRepoUrl || null,
+        autoMergePr: data.autoMergePr,
+        visibility: data.visibility,
+      }
+      // 只在用户实际输入了新 token 时才提交
+      if (data.gitAccessToken) {
+        payload.gitAccessToken = data.gitAccessToken
+      }
+
+      const updated = await api.put(`projects/${project.id}`, { json: payload }).json<Project>()
+      updateProject(project.id, updated)
       onOpenChange(false)
       onSuccess?.()
     } catch (error) {
-      console.error('Failed to create project:', error)
-      alert('创建项目失败')
+      console.error('Failed to update project:', error)
+      alert('更新项目失败')
     } finally {
       setLoading(false)
     }
@@ -63,30 +86,30 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新建项目</DialogTitle>
-          <DialogDescription>创建一个新的 WorkGear 项目</DialogDescription>
+          <DialogTitle>编辑项目</DialogTitle>
+          <DialogDescription>修改项目设置</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="name">项目名称 *</Label>
+              <Label htmlFor="edit-name">项目名称 *</Label>
               <Input
-                id="name"
+                id="edit-name"
                 placeholder="我的项目"
                 {...register('name', { required: '项目名称不能为空' })}
               />
               {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">描述</Label>
+              <Label htmlFor="edit-description">描述</Label>
               <Textarea
-                id="description"
+                id="edit-description"
                 placeholder="项目描述（可选）"
                 {...register('description')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="visibility">可见性</Label>
+              <Label htmlFor="edit-visibility">可见性</Label>
               <Select value={visibility} onValueChange={(v) => setValue('visibility', v as 'private' | 'public')}>
                 <SelectTrigger>
                   <SelectValue />
@@ -98,34 +121,36 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="gitRepoUrl">Git 仓库地址</Label>
+              <Label htmlFor="edit-gitRepoUrl">Git 仓库地址</Label>
               <Input
-                id="gitRepoUrl"
+                id="edit-gitRepoUrl"
                 placeholder="https://github.com/user/repo.git"
                 {...register('gitRepoUrl')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="gitAccessToken">Git Access Token</Label>
+              <Label htmlFor="edit-gitAccessToken">Git Access Token</Label>
               <Input
-                id="gitAccessToken"
+                id="edit-gitAccessToken"
                 type="password"
-                placeholder="ghp_xxxx 或 glpat-xxxx"
+                placeholder="留空则不修改"
                 {...register('gitAccessToken')}
               />
-              <p className="text-xs text-muted-foreground">
-                用于 Agent 自动提交代码，需要仓库写权限
-              </p>
+              {project.gitAccessToken && (
+                <p className="text-xs text-muted-foreground">
+                  当前 Token：{project.gitAccessToken}
+                </p>
+              )}
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label htmlFor="autoMergePr">自动合并 PR</Label>
+                <Label htmlFor="edit-autoMergePr">自动合并 PR</Label>
                 <p className="text-xs text-muted-foreground">
                   创建 PR 后自动 squash merge 到目标分支
                 </p>
               </div>
               <Switch
-                id="autoMergePr"
+                id="edit-autoMergePr"
                 checked={autoMergePr}
                 onCheckedChange={(checked) => setValue('autoMergePr', checked)}
               />
@@ -136,7 +161,7 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
               取消
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? '创建中...' : '创建'}
+              {loading ? '保存中...' : '保存'}
             </Button>
           </DialogFooter>
         </form>

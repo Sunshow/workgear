@@ -35,6 +35,7 @@ export const projects = pgTable('projects', {
   description: text('description'),
   gitRepoUrl: varchar('git_repo_url', { length: 500 }),
   gitAccessToken: varchar('git_access_token', { length: 500 }),
+  autoMergePr: boolean('auto_merge_pr').default(false).notNull(),
   visibility: varchar('visibility', { length: 20 }).default('private').notNull(),
   ownerId: uuid('owner_id').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

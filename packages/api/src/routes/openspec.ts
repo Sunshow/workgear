@@ -158,14 +158,17 @@ export async function openspecRoutes(app: FastifyInstance) {
         content,
         msg,
         project.gitRepoUrl,
-        project.gitAccessToken
+        project.gitAccessToken,
+        project.autoMergePr
       )
       return { 
         success: true, 
         path: fullPath, 
         commitMessage: msg,
         prUrl: result.prUrl,
-        prNumber: result.prNumber
+        prNumber: result.prNumber,
+        merged: result.merged,
+        mergeError: result.mergeError,
       }
     } catch (err) {
       app.log.error(err, 'Failed to update artifact file')
@@ -251,8 +254,9 @@ async function updateGitFileWithPR(
   content: string,
   commitMessage: string,
   rawRepoUrl: string,
-  accessToken: string
-): Promise<{ prUrl?: string; prNumber?: number }> {
+  accessToken: string,
+  autoMerge: boolean = false
+): Promise<{ prUrl?: string; prNumber?: number; merged?: boolean; mergeError?: string }> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workgear-git-'))
   try {
     // Clone base branch
@@ -293,9 +297,33 @@ async function updateGitFileWithPR(
       body: `Automated update from WorkGear.\n\nFile: \`${filePath}\``,
     })
 
+    // Auto-merge if enabled
+    if (autoMerge) {
+      const mergeResult = await provider.mergePullRequest({
+        owner: repoInfo.owner,
+        repo: repoInfo.repo,
+        pullNumber: prResult.number,
+        mergeMethod: 'squash',
+        commitTitle: `[WorkGear] ${commitMessage}`,
+      })
+
+      if (mergeResult.merged) {
+        // Clean up feature branch after successful merge
+        await provider.deleteBranch(repoInfo.owner, repoInfo.repo, featureBranch).catch(() => {})
+      }
+
+      return {
+        prUrl: prResult.url,
+        prNumber: prResult.number,
+        merged: mergeResult.merged,
+        mergeError: mergeResult.merged ? undefined : mergeResult.message,
+      }
+    }
+
     return {
       prUrl: prResult.url,
       prNumber: prResult.number,
+      merged: false,
     }
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})

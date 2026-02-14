@@ -5,6 +5,7 @@ export interface Project {
   description: string | null
   gitRepoUrl: string | null
   gitAccessToken: string | null
+  autoMergePr: boolean
   visibility: 'private' | 'public'
   ownerId: string | null
   createdAt: string
@@ -16,6 +17,7 @@ export interface CreateProjectDto {
   description?: string
   gitRepoUrl?: string
   gitAccessToken?: string
+  autoMergePr?: boolean
   visibility?: 'private' | 'public'
 }
 

@@ -1,4 +1,4 @@
-import type { GitProvider, CreatePullRequestParams, PullRequestResult } from './git-provider.js'
+import type { GitProvider, CreatePullRequestParams, PullRequestResult, MergePullRequestParams, MergePullRequestResult } from './git-provider.js'
 
 export class GitHubProvider implements GitProvider {
   constructor(private token: string) {}
@@ -73,6 +73,52 @@ export class GitHubProvider implements GitProvider {
     }
 
     return null
+  }
+
+  async mergePullRequest(params: MergePullRequestParams): Promise<MergePullRequestResult> {
+    const { owner, repo, pullNumber, mergeMethod = 'squash', commitTitle } = params
+
+    const url = `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/merge`
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify({
+        merge_method: mergeMethod,
+        ...(commitTitle && { commit_title: commitTitle }),
+      }),
+    })
+
+    if (response.ok) {
+      const data = await response.json() as any
+      return { merged: true, sha: data.sha, message: data.message }
+    }
+
+    // 405: not mergeable (e.g. review required), 409: conflict
+    if (response.status === 405 || response.status === 409) {
+      const data = await response.json().catch(() => ({})) as any
+      return { merged: false, message: data.message || `Merge failed (${response.status})` }
+    }
+
+    const errorText = await response.text()
+    return { merged: false, message: `GitHub API error (${response.status}): ${errorText}` }
+  }
+
+  async deleteBranch(owner: string, repo: string, branch: string): Promise<boolean> {
+    const url = `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    })
+    return response.status === 204
   }
 
   parseRepoUrl(url: string): { owner: string; repo: string } | null {

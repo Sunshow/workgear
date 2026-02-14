@@ -13,12 +13,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { CreateProjectDialog } from './create-dialog'
+import { EditProjectDialog } from './edit-dialog'
 
 export function ProjectsPage() {
   const navigate = useNavigate()
   const { projects, setProjects, removeProject } = useProjectStore()
   const [loading, setLoading] = useState(true)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
 
   useEffect(() => {
     loadProjects()
@@ -108,7 +110,7 @@ export function ProjectsPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation()
-                          // TODO: Edit dialog
+                          setEditingProject(project)
                         }}>
                           <Pencil className="mr-2 h-4 w-4" />
                           编辑
@@ -142,6 +144,15 @@ export function ProjectsPage() {
           onOpenChange={setCreateDialogOpen}
           onSuccess={loadProjects}
         />
+
+        {editingProject && (
+          <EditProjectDialog
+            open={!!editingProject}
+            onOpenChange={(open) => !open && setEditingProject(null)}
+            project={editingProject}
+            onSuccess={loadProjects}
+          />
+        )}
       </div>
     </div>
   )
