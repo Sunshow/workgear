@@ -94,6 +94,7 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
     onNodeWaitingHuman: () => refreshNodeRuns(),
     onNodeFailed: () => refreshNodeRuns(),
     onNodeRejected: () => refreshNodeRuns(),
+    onNodeCancelled: () => refreshNodeRuns(),
     onFlowCompleted: () => loadFlowRuns(),
     onFlowFailed: () => loadFlowRuns(),
     onFlowCancelled: () => loadFlowRuns(),
@@ -182,6 +183,7 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
             <NodeRunItem
               key={node.id}
               nodeRun={node}
+              flowStatus={latestFlow.status}
               onActionComplete={refreshNodeRuns}
               onViewLogs={() => setLogDialogNode(node)}
               artifactRefreshKey={artifactRefreshKey}
@@ -224,8 +226,9 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
 
 // ─── NodeRunItem with inline review panel ───
 
-function NodeRunItem({ nodeRun, onActionComplete, onViewLogs, artifactRefreshKey, onEditArtifact }: {
+function NodeRunItem({ nodeRun, flowStatus, onActionComplete, onViewLogs, artifactRefreshKey, onEditArtifact }: {
   nodeRun: NodeRun
+  flowStatus: string
   onActionComplete: () => void
   onViewLogs: () => void
   artifactRefreshKey: number
@@ -235,6 +238,7 @@ function NodeRunItem({ nodeRun, onActionComplete, onViewLogs, artifactRefreshKey
   const [feedback, setFeedback] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [nodeArtifacts, setNodeArtifacts] = useState<Artifact[]>([])
+  const isFlowTerminal = flowStatus === 'cancelled' || flowStatus === 'completed'
 
   // Auto-expand when waiting for human
   useEffect(() => {
@@ -374,7 +378,7 @@ function NodeRunItem({ nodeRun, onActionComplete, onViewLogs, artifactRefreshKey
           )}
 
           {/* Review actions for waiting_human */}
-          {nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'human_review' && (
+          {nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'human_review' && !isFlowTerminal && (
             <div className="space-y-2">
               <Textarea
                 placeholder="输入反馈（拒绝时必填）..."
@@ -397,7 +401,7 @@ function NodeRunItem({ nodeRun, onActionComplete, onViewLogs, artifactRefreshKey
           )}
 
           {/* Submit for human_input */}
-          {nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'human_input' && (
+          {nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'human_input' && !isFlowTerminal && (
             <HumanInputForm nodeRun={nodeRun} onSubmit={async (data) => {
               setSubmitting(true)
               try {
@@ -411,6 +415,11 @@ function NodeRunItem({ nodeRun, onActionComplete, onViewLogs, artifactRefreshKey
                 setSubmitting(false)
               }
             }} submitting={submitting} />
+          )}
+
+          {/* Flow cancelled hint for waiting_human nodes */}
+          {nodeRun.status === 'waiting_human' && isFlowTerminal && (
+            <p className="text-xs text-muted-foreground">流程已取消，无法操作</p>
           )}
 
           {/* Retry for failed nodes */}

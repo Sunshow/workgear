@@ -138,6 +138,7 @@ export function useFlowRunEvents(flowRunId: string | null | undefined, handlers:
   onNodeWaitingHuman?: (data: Record<string, unknown>) => void
   onNodeFailed?: (data: Record<string, unknown>) => void
   onNodeRejected?: (data: Record<string, unknown>) => void
+  onNodeCancelled?: (data: Record<string, unknown>) => void
   onFlowStarted?: (data: Record<string, unknown>) => void
   onFlowCompleted?: (data: Record<string, unknown>) => void
   onFlowFailed?: (data: Record<string, unknown>) => void
@@ -159,6 +160,7 @@ export function useFlowRunEvents(flowRunId: string | null | undefined, handlers:
       case 'node.waiting_human': h.onNodeWaitingHuman?.(data); break
       case 'node.failed': h.onNodeFailed?.(data); break
       case 'node.rejected': h.onNodeRejected?.(data); break
+      case 'node.cancelled': h.onNodeCancelled?.(data); break
       case 'flow.started': h.onFlowStarted?.(data); break
       case 'flow.completed': h.onFlowCompleted?.(data); break
       case 'flow.failed': h.onFlowFailed?.(data); break

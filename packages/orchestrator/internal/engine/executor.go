@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +22,10 @@ type FlowExecutor struct {
 	registry *agent.Registry
 	logger   *zap.SugaredLogger
 	workerID string
+
+	// per-flow cancel context management (for cancelling running containers)
+	flowCancels   map[string]context.CancelFunc
+	flowCancelsMu sync.Mutex
 }
 
 // NewFlowExecutor creates a new flow executor
@@ -31,11 +36,12 @@ func NewFlowExecutor(
 	logger *zap.SugaredLogger,
 ) *FlowExecutor {
 	return &FlowExecutor{
-		db:       dbClient,
-		eventBus: eventBus,
-		registry: registry,
-		logger:   logger,
-		workerID: fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
+		db:          dbClient,
+		eventBus:    eventBus,
+		registry:    registry,
+		logger:      logger,
+		workerID:    fmt.Sprintf("worker-%s", uuid.New().String()[:8]),
+		flowCancels: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -84,27 +90,66 @@ func (e *FlowExecutor) runWorkerLoop(ctx context.Context) {
 				"flow_run_id", nodeRun.FlowRunID,
 			)
 
+			// Create per-flow cancel context (for container termination on flow cancel)
+			flowCtx, cancel := context.WithCancel(ctx)
+			e.registerFlowCancel(nodeRun.FlowRunID, cancel)
+
 			// Publish node.started event
 			e.publishEvent(nodeRun.FlowRunID, nodeRun.ID, nodeRun.NodeID, "node.started", nil)
 
 			// Execute the node
-			if err := e.executeNode(ctx, nodeRun); err != nil {
-				e.logger.Errorw("Node execution failed",
-					"node_run_id", nodeRun.ID,
-					"node_id", nodeRun.NodeID,
-					"error", err,
-				)
-				e.handleNodeError(ctx, nodeRun, err)
+			if err := e.executeNode(flowCtx, nodeRun); err != nil {
+				if flowCtx.Err() == context.Canceled {
+					// Flow was cancelled — CancelFlow already handled status updates
+					e.logger.Infow("Node execution cancelled by flow cancel",
+						"node_run_id", nodeRun.ID,
+						"node_id", nodeRun.NodeID,
+					)
+				} else {
+					e.logger.Errorw("Node execution failed",
+						"node_run_id", nodeRun.ID,
+						"node_id", nodeRun.NodeID,
+						"error", err,
+					)
+					e.handleNodeError(ctx, nodeRun, err)
+				}
 			}
 
-			// Advance DAG after node execution
-			if err := e.advanceDAG(ctx, nodeRun.FlowRunID); err != nil {
-				e.logger.Errorw("Failed to advance DAG",
-					"flow_run_id", nodeRun.FlowRunID,
-					"error", err,
-				)
+			e.unregisterFlowCancel(nodeRun.FlowRunID)
+			cancel() // cleanup
+
+			// Advance DAG only if flow was not cancelled
+			if flowCtx.Err() != context.Canceled {
+				if err := e.advanceDAG(ctx, nodeRun.FlowRunID); err != nil {
+					e.logger.Errorw("Failed to advance DAG",
+						"flow_run_id", nodeRun.FlowRunID,
+						"error", err,
+					)
+				}
 			}
 		}
+	}
+}
+
+// ─── Flow Cancel Context Management ───
+
+func (e *FlowExecutor) registerFlowCancel(flowRunID string, cancel context.CancelFunc) {
+	e.flowCancelsMu.Lock()
+	defer e.flowCancelsMu.Unlock()
+	e.flowCancels[flowRunID] = cancel
+}
+
+func (e *FlowExecutor) unregisterFlowCancel(flowRunID string) {
+	e.flowCancelsMu.Lock()
+	defer e.flowCancelsMu.Unlock()
+	delete(e.flowCancels, flowRunID)
+}
+
+func (e *FlowExecutor) cancelFlowContext(flowRunID string) {
+	e.flowCancelsMu.Lock()
+	defer e.flowCancelsMu.Unlock()
+	if cancel, ok := e.flowCancels[flowRunID]; ok {
+		cancel()
 	}
 }
 

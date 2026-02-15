@@ -405,13 +405,36 @@ func (c *Client) AllNodesCompleted(ctx context.Context, flowRunID string) (bool,
 	return count == 0, nil
 }
 
-// CancelPendingNodeRuns cancels all pending/queued node runs for a flow
+// CancelPendingNodeRuns cancels all active (non-terminal) node runs for a flow
 func (c *Client) CancelPendingNodeRuns(ctx context.Context, flowRunID string) error {
 	_, err := c.pool.Exec(ctx, `
-		UPDATE node_runs SET status = 'cancelled'
-		WHERE flow_run_id = $1 AND status IN ('pending', 'queued')
+		UPDATE node_runs SET status = 'cancelled', completed_at = COALESCE(completed_at, NOW())
+		WHERE flow_run_id = $1 AND status IN ('pending', 'queued', 'waiting_human', 'running')
 	`, flowRunID)
 	return err
+}
+
+// GetActiveNodeRuns returns all non-terminal node runs for a flow (for cancel event publishing)
+func (c *Client) GetActiveNodeRuns(ctx context.Context, flowRunID string) ([]*NodeRun, error) {
+	rows, err := c.pool.Query(ctx, `
+		SELECT id, flow_run_id, node_id, node_type, node_name, status
+		FROM node_runs
+		WHERE flow_run_id = $1 AND status IN ('pending', 'queued', 'waiting_human', 'running')
+	`, flowRunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*NodeRun
+	for rows.Next() {
+		var nr NodeRun
+		if err := rows.Scan(&nr.ID, &nr.FlowRunID, &nr.NodeID, &nr.NodeType, &nr.NodeName, &nr.Status); err != nil {
+			return nil, err
+		}
+		result = append(result, &nr)
+	}
+	return result, nil
 }
 
 // GetNodeRunByFlowAndNode finds a node run by flow_run_id and node_id

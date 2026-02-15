@@ -226,7 +226,7 @@ func (e *FlowExecutor) StartFlow(ctx context.Context, flowRunID, dsl string, var
 	return nil
 }
 
-// CancelFlow cancels a running flow and all its pending/queued nodes
+// CancelFlow cancels a running flow and all its active nodes
 func (e *FlowExecutor) CancelFlow(ctx context.Context, flowRunID string) error {
 	flowRun, err := e.db.GetFlowRun(ctx, flowRunID)
 	if err != nil {
@@ -237,12 +237,28 @@ func (e *FlowExecutor) CancelFlow(ctx context.Context, flowRunID string) error {
 		return fmt.Errorf("cannot cancel flow in status: %s", flowRun.Status)
 	}
 
-	// Cancel all pending/queued nodes
-	if err := e.db.CancelPendingNodeRuns(ctx, flowRunID); err != nil {
-		return fmt.Errorf("cancel pending nodes: %w", err)
+	// 1. Get active nodes before cancelling (for event publishing)
+	activeNodes, err := e.db.GetActiveNodeRuns(ctx, flowRunID)
+	if err != nil {
+		e.logger.Warnw("Failed to get active nodes for cancel", "error", err)
 	}
 
-	// Update flow status
+	// 2. Trigger per-flow context cancel (terminates running Docker containers)
+	e.cancelFlowContext(flowRunID)
+
+	// 3. Cancel all active nodes in DB
+	if err := e.db.CancelPendingNodeRuns(ctx, flowRunID); err != nil {
+		return fmt.Errorf("cancel active nodes: %w", err)
+	}
+
+	// 4. Publish node.cancelled event for each affected node
+	for _, node := range activeNodes {
+		e.publishEvent(flowRunID, node.ID, node.NodeID, "node.cancelled", map[string]any{
+			"previous_status": node.Status,
+		})
+	}
+
+	// 5. Update flow status
 	if err := e.db.UpdateFlowRunStatus(ctx, flowRunID, db.StatusCancelled); err != nil {
 		return fmt.Errorf("update flow status: %w", err)
 	}
@@ -268,6 +284,15 @@ func (e *FlowExecutor) HandleApprove(ctx context.Context, nodeRunID string) erro
 	nodeRun, err := e.db.GetNodeRun(ctx, nodeRunID)
 	if err != nil {
 		return fmt.Errorf("get node run: %w", err)
+	}
+
+	// Check if flow has been cancelled
+	flowRun, err := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("get flow run: %w", err)
+	}
+	if flowRun.Status == db.StatusCancelled {
+		return fmt.Errorf("flow has been cancelled")
 	}
 
 	if nodeRun.Status != db.StatusWaitingHuman {
@@ -301,15 +326,12 @@ func (e *FlowExecutor) HandleApprove(ctx context.Context, nodeRunID string) erro
 		"review_action": "approve",
 	})
 
-	// Record timeline
-	flowRun, _ := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
-	if flowRun != nil {
-		e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRunID, "review_approved", map[string]any{
-			"node_id":   nodeRun.NodeID,
-			"node_name": ptrStr(nodeRun.NodeName),
-			"message":   fmt.Sprintf("审核通过：%s", ptrStr(nodeRun.NodeName)),
-		})
-	}
+	// Record timeline (flowRun already fetched above)
+	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRunID, "review_approved", map[string]any{
+		"node_id":   nodeRun.NodeID,
+		"node_name": ptrStr(nodeRun.NodeName),
+		"message":   fmt.Sprintf("审核通过：%s", ptrStr(nodeRun.NodeName)),
+	})
 
 	// Advance DAG
 	return e.advanceDAG(ctx, nodeRun.FlowRunID)
@@ -320,6 +342,15 @@ func (e *FlowExecutor) HandleReject(ctx context.Context, nodeRunID, feedback str
 	nodeRun, err := e.db.GetNodeRun(ctx, nodeRunID)
 	if err != nil {
 		return fmt.Errorf("get node run: %w", err)
+	}
+
+	// Check if flow has been cancelled
+	flowRun, err := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("get flow run: %w", err)
+	}
+	if flowRun.Status == db.StatusCancelled {
+		return fmt.Errorf("flow has been cancelled")
 	}
 
 	if nodeRun.Status != db.StatusWaitingHuman {
@@ -340,12 +371,7 @@ func (e *FlowExecutor) HandleReject(ctx context.Context, nodeRunID, feedback str
 		"feedback": feedback,
 	})
 
-	// Find the target node to roll back to
-	flowRun, err := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
-	if err != nil {
-		return fmt.Errorf("get flow run: %w", err)
-	}
-
+	// Find the target node to roll back to (flowRun already fetched above)
 	nodeDef, err := e.getNodeDef(flowRun, nodeRun.NodeID)
 	if err != nil {
 		return fmt.Errorf("get node def: %w", err)
@@ -452,6 +478,15 @@ func (e *FlowExecutor) HandleEdit(ctx context.Context, nodeRunID, editedContent,
 		return fmt.Errorf("get node run: %w", err)
 	}
 
+	// Check if flow has been cancelled
+	flowRun, err := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("get flow run: %w", err)
+	}
+	if flowRun.Status == db.StatusCancelled {
+		return fmt.Errorf("flow has been cancelled")
+	}
+
 	if nodeRun.Status != db.StatusWaitingHuman {
 		return fmt.Errorf("node is not waiting for human action, current status: %s", nodeRun.Status)
 	}
@@ -484,16 +519,13 @@ func (e *FlowExecutor) HandleEdit(ctx context.Context, nodeRunID, editedContent,
 		"review_action": "edit_and_approve",
 	})
 
-	// Record timeline
-	flowRun, _ := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
-	if flowRun != nil {
-		e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRunID, "review_edited", map[string]any{
-			"node_id":        nodeRun.NodeID,
-			"node_name":      ptrStr(nodeRun.NodeName),
-			"change_summary": changeSummary,
-			"message":        fmt.Sprintf("编辑后通过：%s", ptrStr(nodeRun.NodeName)),
-		})
-	}
+	// Record timeline (flowRun already fetched above)
+	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRunID, "review_edited", map[string]any{
+		"node_id":        nodeRun.NodeID,
+		"node_name":      ptrStr(nodeRun.NodeName),
+		"change_summary": changeSummary,
+		"message":        fmt.Sprintf("编辑后通过：%s", ptrStr(nodeRun.NodeName)),
+	})
 
 	return e.advanceDAG(ctx, nodeRun.FlowRunID)
 }
@@ -503,6 +535,15 @@ func (e *FlowExecutor) HandleHumanInput(ctx context.Context, nodeRunID, dataJSON
 	nodeRun, err := e.db.GetNodeRun(ctx, nodeRunID)
 	if err != nil {
 		return fmt.Errorf("get node run: %w", err)
+	}
+
+	// Check if flow has been cancelled
+	flowRun, err := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("get flow run: %w", err)
+	}
+	if flowRun.Status == db.StatusCancelled {
+		return fmt.Errorf("flow has been cancelled")
 	}
 
 	if nodeRun.Status != db.StatusWaitingHuman {
@@ -527,15 +568,12 @@ func (e *FlowExecutor) HandleHumanInput(ctx context.Context, nodeRunID, dataJSON
 		"input_submitted": true,
 	})
 
-	// Record timeline
-	flowRun, _ := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
-	if flowRun != nil {
-		e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRunID, "human_input_submitted", map[string]any{
-			"node_id":   nodeRun.NodeID,
-			"node_name": ptrStr(nodeRun.NodeName),
-			"message":   fmt.Sprintf("人工输入已提交：%s", ptrStr(nodeRun.NodeName)),
-		})
-	}
+	// Record timeline (flowRun already fetched above)
+	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRunID, "human_input_submitted", map[string]any{
+		"node_id":   nodeRun.NodeID,
+		"node_name": ptrStr(nodeRun.NodeName),
+		"message":   fmt.Sprintf("人工输入已提交：%s", ptrStr(nodeRun.NodeName)),
+	})
 
 	return e.advanceDAG(ctx, nodeRun.FlowRunID)
 }
