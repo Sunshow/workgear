@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { api } from '@/lib/api'
-import type { Project } from '@/lib/types'
+import type { Project, GitMergeMethod } from '@/lib/types'
 import { useProjectStore } from '@/stores/project-store'
 import {
   Dialog,
@@ -30,6 +30,7 @@ interface CreateProjectForm {
   gitRepoUrl?: string
   gitAccessToken?: string
   autoMergePr: boolean
+  gitMergeMethod: GitMergeMethod
   visibility: 'private' | 'public'
 }
 
@@ -37,11 +38,12 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
   const { addProject } = useProjectStore()
   const [loading, setLoading] = useState(false)
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CreateProjectForm>({
-    defaultValues: { visibility: 'private', autoMergePr: false }
+    defaultValues: { visibility: 'private', autoMergePr: false, gitMergeMethod: 'merge' }
   })
 
   const visibility = watch('visibility')
   const autoMergePr = watch('autoMergePr')
+  const gitMergeMethod = watch('gitMergeMethod')
 
   async function onSubmit(data: CreateProjectForm) {
     setLoading(true)
@@ -121,7 +123,7 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
               <div className="space-y-0.5">
                 <Label htmlFor="autoMergePr">自动合并 PR</Label>
                 <p className="text-xs text-muted-foreground">
-                  创建 PR 后自动 squash merge 到目标分支
+                  流程完成后自动合并 PR 到目标分支
                 </p>
               </div>
               <Switch
@@ -130,6 +132,21 @@ export function CreateProjectDialog({ open, onOpenChange, onSuccess }: CreatePro
                 onCheckedChange={(checked) => setValue('autoMergePr', checked)}
               />
             </div>
+            {autoMergePr && (
+              <div className="space-y-2">
+                <Label htmlFor="gitMergeMethod">合并方式</Label>
+                <Select value={gitMergeMethod} onValueChange={(v) => setValue('gitMergeMethod', v as GitMergeMethod)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="merge">Merge — 创建合并提交（推荐）</SelectItem>
+                    <SelectItem value="squash">Squash — 压缩为单个提交</SelectItem>
+                    <SelectItem value="rebase">Rebase — 线性合并</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

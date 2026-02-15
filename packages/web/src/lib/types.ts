@@ -1,4 +1,6 @@
 // Project types
+export type GitMergeMethod = 'merge' | 'squash' | 'rebase'
+
 export interface Project {
   id: string
   name: string
@@ -6,6 +8,7 @@ export interface Project {
   gitRepoUrl: string | null
   gitAccessToken: string | null
   autoMergePr: boolean
+  gitMergeMethod: GitMergeMethod
   visibility: 'private' | 'public'
   ownerId: string | null
   createdAt: string
@@ -18,6 +21,7 @@ export interface CreateProjectDto {
   gitRepoUrl?: string
   gitAccessToken?: string
   autoMergePr?: boolean
+  gitMergeMethod?: GitMergeMethod
   visibility?: 'private' | 'public'
 }
 

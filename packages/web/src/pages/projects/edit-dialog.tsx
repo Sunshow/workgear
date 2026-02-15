@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { api } from '@/lib/api'
-import type { Project } from '@/lib/types'
+import type { Project, GitMergeMethod } from '@/lib/types'
 import { useProjectStore } from '@/stores/project-store'
 import {
   Dialog,
@@ -31,6 +31,7 @@ interface EditProjectForm {
   gitRepoUrl: string
   gitAccessToken: string
   autoMergePr: boolean
+  gitMergeMethod: GitMergeMethod
   visibility: 'private' | 'public'
 }
 
@@ -41,6 +42,7 @@ export function EditProjectDialog({ open, onOpenChange, project, onSuccess }: Ed
 
   const visibility = watch('visibility')
   const autoMergePr = watch('autoMergePr')
+  const gitMergeMethod = watch('gitMergeMethod')
 
   useEffect(() => {
     if (open) {
@@ -50,6 +52,7 @@ export function EditProjectDialog({ open, onOpenChange, project, onSuccess }: Ed
         gitRepoUrl: project.gitRepoUrl || '',
         gitAccessToken: '',
         autoMergePr: project.autoMergePr,
+        gitMergeMethod: project.gitMergeMethod || 'merge',
         visibility: project.visibility,
       })
     }
@@ -63,6 +66,7 @@ export function EditProjectDialog({ open, onOpenChange, project, onSuccess }: Ed
         description: data.description || null,
         gitRepoUrl: data.gitRepoUrl || null,
         autoMergePr: data.autoMergePr,
+        gitMergeMethod: data.gitMergeMethod,
         visibility: data.visibility,
       }
       // 只在用户实际输入了新 token 时才提交
@@ -146,7 +150,7 @@ export function EditProjectDialog({ open, onOpenChange, project, onSuccess }: Ed
               <div className="space-y-0.5">
                 <Label htmlFor="edit-autoMergePr">自动合并 PR</Label>
                 <p className="text-xs text-muted-foreground">
-                  创建 PR 后自动 squash merge 到目标分支
+                  流程完成后自动合并 PR 到目标分支
                 </p>
               </div>
               <Switch
@@ -155,6 +159,21 @@ export function EditProjectDialog({ open, onOpenChange, project, onSuccess }: Ed
                 onCheckedChange={(checked) => setValue('autoMergePr', checked)}
               />
             </div>
+            {autoMergePr && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-gitMergeMethod">合并方式</Label>
+                <Select value={gitMergeMethod} onValueChange={(v) => setValue('gitMergeMethod', v as GitMergeMethod)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="merge">Merge — 创建合并提交（推荐）</SelectItem>
+                    <SelectItem value="squash">Squash — 压缩为单个提交</SelectItem>
+                    <SelectItem value="rebase">Rebase — 线性合并</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

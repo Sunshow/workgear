@@ -67,9 +67,9 @@ export async function projectRoutes(app: FastifyInstance) {
 
   // 创建项目（自动创建默认看板和列）
   app.post<{
-    Body: { name: string; description?: string; gitRepoUrl?: string; gitAccessToken?: string; autoMergePr?: boolean; visibility?: string }
+    Body: { name: string; description?: string; gitRepoUrl?: string; gitAccessToken?: string; autoMergePr?: boolean; gitMergeMethod?: string; visibility?: string }
   }>('/', { preHandler: [authenticate] }, async (request, reply) => {
-    const { name, description, gitRepoUrl, gitAccessToken, autoMergePr, visibility } = request.body
+    const { name, description, gitRepoUrl, gitAccessToken, autoMergePr, gitMergeMethod, visibility } = request.body
     const userId = request.userId!
 
     if (!name || name.trim().length === 0) {
@@ -83,6 +83,7 @@ export async function projectRoutes(app: FastifyInstance) {
       gitRepoUrl: gitRepoUrl || null,
       gitAccessToken: gitAccessToken || null,
       autoMergePr: autoMergePr ?? false,
+      gitMergeMethod: gitMergeMethod || 'merge',
       visibility: visibility === 'public' ? 'public' : 'private',
       ownerId: userId,
     }).returning()
@@ -116,13 +117,13 @@ export async function projectRoutes(app: FastifyInstance) {
   // 更新项目
   app.put<{
     Params: { id: string }
-    Body: { name?: string; description?: string; gitRepoUrl?: string; gitAccessToken?: string; autoMergePr?: boolean; visibility?: string }
+    Body: { name?: string; description?: string; gitRepoUrl?: string; gitAccessToken?: string; autoMergePr?: boolean; gitMergeMethod?: string; visibility?: string }
   }>(
     '/:id',
     { preHandler: [authenticate, requireProjectAccess('owner')] },
     async (request, reply) => {
       const { id } = request.params
-      const { name, description, gitRepoUrl, gitAccessToken, autoMergePr, visibility } = request.body
+      const { name, description, gitRepoUrl, gitAccessToken, autoMergePr, gitMergeMethod, visibility } = request.body
 
       const [updated] = await db.update(projects)
         .set({
@@ -131,6 +132,7 @@ export async function projectRoutes(app: FastifyInstance) {
           ...(gitRepoUrl !== undefined && { gitRepoUrl }),
           ...(gitAccessToken !== undefined && { gitAccessToken }),
           ...(autoMergePr !== undefined && { autoMergePr }),
+          ...(gitMergeMethod !== undefined && { gitMergeMethod }),
           ...(visibility !== undefined && { visibility }),
           updatedAt: new Date(),
         })

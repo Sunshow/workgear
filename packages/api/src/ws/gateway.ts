@@ -180,12 +180,13 @@ async function handleFlowCompletedAutoMerge(
 
   logger.info(`Auto-merging PR #${flowRun.prNumber} for flow ${flowRunId}...`)
 
+  const mergeMethod = (project.gitMergeMethod as 'merge' | 'squash' | 'rebase') || 'merge'
   const mergeResult = await provider.mergePullRequest({
     owner: repoInfo.owner,
     repo: repoInfo.repo,
     pullNumber: flowRun.prNumber,
-    mergeMethod: 'squash',
-    commitTitle: task.title,
+    mergeMethod,
+    commitTitle: mergeMethod === 'squash' ? task.title : undefined,
   })
 
   if (mergeResult.merged) {

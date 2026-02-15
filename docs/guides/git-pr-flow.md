@@ -290,6 +290,18 @@ func (c *Client) UpdateFlowRunPR(ctx context.Context, flowRunID, branchName, prU
 - `project.auto_merge_pr = true`
 - `project.git_access_token` 和 `project.git_repo_url` 已配置
 
+### Merge 方式
+
+项目可配置 `git_merge_method` 字段（默认 `merge`）：
+
+| 方式 | 说明 | Git 历史 |
+|------|------|---------|
+| `merge` | 创建 merge commit | 保留所有 commits + "Merge pull request #X from branch" |
+| `squash` | 压缩为单个 commit | 单个 commit，message 为 `task.title` |
+| `rebase` | 线性合并 | 将 feature branch commits 线性合并到 main |
+
+**推荐使用 `merge` 方式**，和手动点击 GitHub Merge 按钮效果一致，便于追踪 PR 历史。
+
 ### 实现位置
 
 `packages/api/src/ws/gateway.ts` 的 `handleFlowCompletedAutoMerge` 函数：
