@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Brain, Wrench, CheckCircle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useNodeLogStream, type LogStreamEvent } from '@/hooks/use-websocket'
+import { CodeBlock } from '@/components/code-block'
 
 interface NodeLogDialogProps {
   nodeRun: { id: string; nodeName?: string | null; status: string } | null
@@ -122,9 +123,11 @@ function LogEntry({ event }: { event: LogStreamEvent }) {
             <span className="ml-auto">{time}</span>
           </div>
           {event.tool_input && (
-            <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs">
-              {JSON.stringify(event.tool_input, null, 2)}
-            </pre>
+            <CodeBlock
+              code={JSON.stringify(event.tool_input, null, 2)}
+              language="json"
+              className="mt-2"
+            />
           )}
         </div>
       )
@@ -137,7 +140,10 @@ function LogEntry({ event }: { event: LogStreamEvent }) {
             <span>工具结果</span>
             <span className="ml-auto">{time}</span>
           </div>
-          <div className="mt-1 text-xs whitespace-pre-wrap overflow-x-auto">{event.content}</div>
+          <CodeBlock
+            code={event.content || ''}
+            className="mt-1"
+          />
         </div>
       )
 
@@ -156,7 +162,11 @@ function LogEntry({ event }: { event: LogStreamEvent }) {
       return (
         <div className="rounded-lg border bg-gray-50 p-3">
           <div className="text-xs text-muted-foreground">{time}</div>
-          <pre className="mt-1 text-xs overflow-x-auto">{JSON.stringify(event, null, 2)}</pre>
+          <CodeBlock
+            code={JSON.stringify(event, null, 2)}
+            language="json"
+            className="mt-1"
+          />
         </div>
       )
   }
