@@ -189,7 +189,26 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
   )
 }
 
-// ─── Sub-component: group artifacts by node within a flow run ───
+// ─── Helpers ───
+
+function deduplicateNodeRuns(nodeRuns: NodeRun[]): NodeRun[] {
+  const map = new Map<string, NodeRun>()
+  for (const nr of nodeRuns) {
+    const existing = map.get(nr.nodeId)
+    if (!existing || nr.attempt > existing.attempt) {
+      map.set(nr.nodeId, nr)
+    }
+  }
+  const seen = new Set<string>()
+  const result: NodeRun[] = []
+  for (const nr of nodeRuns) {
+    if (!seen.has(nr.nodeId)) {
+      seen.add(nr.nodeId)
+      result.push(map.get(nr.nodeId)!)
+    }
+  }
+  return result
+}// ─── Sub-component: group artifacts by node within a flow run ───
 
 function FlowArtifactsByNode({
   artifacts,
@@ -217,12 +236,12 @@ function FlowArtifactsByNode({
   const noNodeArtifacts = byNode.get(null) || []
   byNode.delete(null)
 
-  // Sort node groups by node execution order (createdAt)
+  // Use deduplicated nodeRuns order (DSL definition order) to sort node groups
+  const orderedNodeRuns = deduplicateNodeRuns(nodeRuns)
+  const nodeOrderMap = new Map(orderedNodeRuns.map((nr, i) => [nr.id, i]))
+
   const sortedNodeIds = [...byNode.keys()].sort((a, b) => {
-    const nrA = nodeRunById.get(a!)
-    const nrB = nodeRunById.get(b!)
-    if (!nrA || !nrB) return 0
-    return new Date(nrA.createdAt).getTime() - new Date(nrB.createdAt).getTime()
+    return (nodeOrderMap.get(a!) ?? 999) - (nodeOrderMap.get(b!) ?? 999)
   })
 
   return (
