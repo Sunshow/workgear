@@ -255,15 +255,35 @@ export const timelineEvents = pgTable('timeline_events', {
 ])
 
 // ============================================================
-// Agent 配置表
+// Agent Provider 表
 // ============================================================
-export const agentConfigs = pgTable('agent_configs', {
+export const agentProviders = pgTable('agent_providers', {
   id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 100 }).unique().notNull(),
-  type: varchar('type', { length: 50 }).notNull(),
+  agentType: varchar('agent_type', { length: 50 }).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
   config: jsonb('config').notNull(),
+  isDefault: boolean('is_default').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique('agent_providers_type_name').on(table.agentType, table.name),
+  index('idx_agent_providers_type').on(table.agentType),
+])
+
+// ============================================================
+// Agent Model 表
+// ============================================================
+export const agentModels = pgTable('agent_models', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  providerId: uuid('provider_id').notNull().references(() => agentProviders.id, { onDelete: 'cascade' }),
+  modelName: varchar('model_name', { length: 100 }).notNull(),
+  displayName: varchar('display_name', { length: 200 }),
+  isDefault: boolean('is_default').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique('agent_models_provider_model').on(table.providerId, table.modelName),
+  index('idx_agent_models_provider').on(table.providerId),
+])
 
 // ============================================================
 // Agent 角色模板表
@@ -274,7 +294,8 @@ export const agentRoles = pgTable('agent_roles', {
   name: varchar('name', { length: 200 }).notNull(),
   description: text('description'),
   agentType: varchar('agent_type', { length: 50 }).notNull().default('claude-code'),
-  defaultModel: varchar('default_model', { length: 100 }),
+  providerId: uuid('provider_id').references(() => agentProviders.id, { onDelete: 'set null' }),
+  modelId: uuid('model_id').references(() => agentModels.id, { onDelete: 'set null' }),
   systemPrompt: text('system_prompt').notNull(),
   isBuiltin: boolean('is_builtin').default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

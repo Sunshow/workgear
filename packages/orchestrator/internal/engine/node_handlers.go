@@ -41,8 +41,8 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
-	// 4. Get adapter from registry
-	adapter, err := e.registry.GetAdapter(role)
+	// 4. Get adapter from registry (now returns model name too)
+	adapter, registryModel, err := e.registry.GetAdapterForRole(role)
 	if err != nil {
 		return fmt.Errorf("get agent adapter: %w", err)
 	}
@@ -53,7 +53,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		e.logger.Warnw("Failed to get role config from DB", "role", role, "error", err)
 	}
 
-	// 6. Determine model: DSL explicit config > role default > global default (handled by adapter)
+	// 6. Determine model: DSL explicit config > registry mapping > adapter default
 	model := ""
 	if nodeDef.Agent != nil && nodeDef.Agent.Model != "" {
 		model = nodeDef.Agent.Model
@@ -62,8 +62,8 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 			model = rendered
 		}
 	}
-	if model == "" && roleConfig != nil && roleConfig.DefaultModel != nil {
-		model = *roleConfig.DefaultModel
+	if model == "" && registryModel != "" {
+		model = registryModel
 	}
 
 	// 7. Use system prompt from database (overrides hardcoded prompt)

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Bot, Plus, Pencil, Trash2, Save, X } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { AgentRole } from '@/lib/types'
+import type { AgentRole, AgentTypeDefinition, AgentProvider, AgentModel } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,36 +24,43 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-const MODEL_OPTIONS = [
-  { value: '__default__', label: '默认 (CLAUDE_MODEL)' },
-  { value: 'claude-opus-4-6', label: 'Claude Opus 4' },
-  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4' },
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4 (20250514)' },
-  { value: 'claude-opus-4-20250918', label: 'Claude Opus 4 (20250918)' },
-]
-
-const AGENT_TYPE_OPTIONS = [
-  { value: 'claude-code', label: 'Claude Code' },
-]
+const NONE_VALUE = '__none__'
 
 export function AgentRolesPage() {
   const [roles, setRoles] = useState<AgentRole[]>([])
+  const [agentTypes, setAgentTypes] = useState<Record<string, AgentTypeDefinition>>({})
+  const [providers, setProviders] = useState<AgentProvider[]>([])
+  const [models, setModels] = useState<Record<string, AgentModel[]>>({})
   const [loading, setLoading] = useState(true)
   const [editingRole, setEditingRole] = useState<AgentRole | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    loadRoles()
+    loadData()
   }, [])
 
-  async function loadRoles() {
+  async function loadData() {
     setLoading(true)
     try {
-      const data = await api.get('agent-roles').json<AgentRole[]>()
-      setRoles(data)
+      const [rolesData, typesData, providersData] = await Promise.all([
+        api.get('agent-roles').json<AgentRole[]>(),
+        api.get('agent-types').json<Record<string, AgentTypeDefinition>>(),
+        api.get('agent-providers').json<AgentProvider[]>(),
+      ])
+      setRoles(rolesData)
+      setAgentTypes(typesData)
+      setProviders(providersData)
+
+      // 加载所有 Provider 的 Model
+      const modelsByProvider: Record<string, AgentModel[]> = {}
+      for (const p of providersData) {
+        const m = await api.get(`agent-providers/${p.id}/models`).json<AgentModel[]>()
+        modelsByProvider[p.id] = m
+      }
+      setModels(modelsByProvider)
     } catch (error) {
-      console.error('Failed to load agent roles:', error)
+      console.error('Failed to load data:', error)
     } finally {
       setLoading(false)
     }
@@ -63,7 +70,7 @@ export function AgentRolesPage() {
     setSaving(true)
     try {
       await api.put(`agent-roles/${role.id}`, { json: updates })
-      await loadRoles()
+      await loadData()
       setEditingRole(null)
     } catch (error) {
       console.error('Failed to update role:', error)
@@ -78,13 +85,14 @@ export function AgentRolesPage() {
     name: string
     description: string
     agentType: string
-    defaultModel: string | null
+    providerId: string | null
+    modelId: string | null
     systemPrompt: string
   }) {
     setSaving(true)
     try {
       await api.post('agent-roles', { json: data })
-      await loadRoles()
+      await loadData()
       setShowCreateDialog(false)
     } catch (error) {
       console.error('Failed to create role:', error)
@@ -98,7 +106,7 @@ export function AgentRolesPage() {
     if (!confirm(`确定要删除角色 "${role.name}" 吗？`)) return
     try {
       await api.delete(`agent-roles/${role.id}`)
-      await loadRoles()
+      await loadData()
     } catch (error) {
       console.error('Failed to delete role:', error)
       alert('删除失败')
@@ -120,7 +128,7 @@ export function AgentRolesPage() {
           <Bot className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold">Agent 角色管理</h1>
           <span className="text-sm text-muted-foreground">
-            配置每个角色使用的 Agent 类型和默认模型
+            配置每个角色使用的 Agent 类型、Provider 和 Model
           </span>
         </div>
         <Button size="sm" onClick={() => setShowCreateDialog(true)}>
@@ -135,6 +143,9 @@ export function AgentRolesPage() {
             <RoleCard
               key={role.id}
               role={role}
+              agentTypes={agentTypes}
+              providers={providers}
+              models={models}
               isEditing={editingRole?.id === role.id}
               onEdit={() => setEditingRole(role)}
               onCancel={() => setEditingRole(null)}
@@ -149,6 +160,9 @@ export function AgentRolesPage() {
       <CreateRoleDialog
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
+        agentTypes={agentTypes}
+        providers={providers}
+        models={models}
         onCreate={handleCreate}
         saving={saving}
       />
@@ -158,6 +172,9 @@ export function AgentRolesPage() {
 
 function RoleCard({
   role,
+  agentTypes,
+  providers,
+  models,
   isEditing,
   onEdit,
   onCancel,
@@ -166,6 +183,9 @@ function RoleCard({
   saving,
 }: {
   role: AgentRole
+  agentTypes: Record<string, AgentTypeDefinition>
+  providers: AgentProvider[]
+  models: Record<string, AgentModel[]>
   isEditing: boolean
   onEdit: () => void
   onCancel: () => void
@@ -176,7 +196,8 @@ function RoleCard({
   const [editName, setEditName] = useState(role.name)
   const [editDescription, setEditDescription] = useState(role.description || '')
   const [editAgentType, setEditAgentType] = useState(role.agentType)
-  const [editModel, setEditModel] = useState(role.defaultModel || '__default__')
+  const [editProviderId, setEditProviderId] = useState(role.providerId || NONE_VALUE)
+  const [editModelId, setEditModelId] = useState(role.modelId || NONE_VALUE)
   const [editPrompt, setEditPrompt] = useState(role.systemPrompt)
 
   useEffect(() => {
@@ -184,10 +205,35 @@ function RoleCard({
       setEditName(role.name)
       setEditDescription(role.description || '')
       setEditAgentType(role.agentType)
-      setEditModel(role.defaultModel || '__default__')
+      setEditProviderId(role.providerId || NONE_VALUE)
+      setEditModelId(role.modelId || NONE_VALUE)
       setEditPrompt(role.systemPrompt)
     }
   }, [isEditing, role])
+
+  const filteredProviders = providers.filter((p) => p.agentType === editAgentType)
+  const filteredModels = editProviderId !== NONE_VALUE ? (models[editProviderId] || []) : []
+
+  // 当 agentType 变化时重置 provider 和 model
+  useEffect(() => {
+    if (isEditing) {
+      const hasProvider = filteredProviders.some((p) => p.id === editProviderId)
+      if (!hasProvider) {
+        setEditProviderId(NONE_VALUE)
+        setEditModelId(NONE_VALUE)
+      }
+    }
+  }, [editAgentType])
+
+  // 当 provider 变化时重置 model
+  useEffect(() => {
+    if (isEditing) {
+      const hasModel = filteredModels.some((m) => m.id === editModelId)
+      if (!hasModel) {
+        setEditModelId(NONE_VALUE)
+      }
+    }
+  }, [editProviderId])
 
   if (isEditing) {
     return (
@@ -213,7 +259,7 @@ function RoleCard({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <Label>Agent 类型</Label>
             <Select value={editAgentType} onValueChange={setEditAgentType}>
@@ -221,24 +267,41 @@ function RoleCard({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {AGENT_TYPE_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
+                {Object.entries(agentTypes).map(([key, def]) => (
+                  <SelectItem key={key} value={key}>
+                    {def.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label>默认模型</Label>
-            <Select value={editModel} onValueChange={setEditModel}>
+            <Label>Provider</Label>
+            <Select value={editProviderId} onValueChange={setEditProviderId}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {MODEL_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
+                <SelectItem value={NONE_VALUE}>使用默认</SelectItem>
+                {filteredProviders.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} {p.isDefault ? '(默认)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Model</Label>
+            <Select value={editModelId} onValueChange={setEditModelId}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_VALUE}>使用默认</SelectItem>
+                {filteredModels.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.displayName || m.modelName} {m.isDefault ? '(默认)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -268,7 +331,8 @@ function RoleCard({
                 name: editName,
                 description: editDescription || null,
                 agentType: editAgentType,
-                defaultModel: editModel === '__default__' ? null : editModel,
+                providerId: editProviderId === NONE_VALUE ? null : editProviderId,
+                modelId: editModelId === NONE_VALUE ? null : editModelId,
                 systemPrompt: editPrompt,
               })
             }
@@ -297,15 +361,9 @@ function RoleCard({
           <p className="text-sm text-muted-foreground">{role.description}</p>
         )}
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>Agent: {role.agentType}</span>
-          <span>
-            模型:{' '}
-            {role.defaultModel ? (
-              <span className="font-mono">{role.defaultModel}</span>
-            ) : (
-              <span className="italic">默认 (CLAUDE_MODEL)</span>
-            )}
-          </span>
+          <span>Agent: {agentTypes[role.agentType]?.name || role.agentType}</span>
+          <span>Provider: {role.providerName || '默认'}</span>
+          <span>Model: {role.modelName || '默认'}</span>
         </div>
       </div>
       <div className="flex items-center gap-1">
@@ -325,17 +383,24 @@ function RoleCard({
 function CreateRoleDialog({
   open,
   onOpenChange,
+  agentTypes,
+  providers,
+  models,
   onCreate,
   saving,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  agentTypes: Record<string, AgentTypeDefinition>
+  providers: AgentProvider[]
+  models: Record<string, AgentModel[]>
   onCreate: (data: {
     slug: string
     name: string
     description: string
     agentType: string
-    defaultModel: string | null
+    providerId: string | null
+    modelId: string | null
     systemPrompt: string
   }) => void
   saving: boolean
@@ -344,8 +409,12 @@ function CreateRoleDialog({
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [agentType, setAgentType] = useState('claude-code')
-  const [model, setModel] = useState('__default__')
+  const [providerId, setProviderId] = useState(NONE_VALUE)
+  const [modelId, setModelId] = useState(NONE_VALUE)
   const [prompt, setPrompt] = useState('')
+
+  const filteredProviders = providers.filter((p) => p.agentType === agentType)
+  const filteredModels = providerId !== NONE_VALUE ? (models[providerId] || []) : []
 
   function handleClose(open: boolean) {
     if (!open) {
@@ -353,7 +422,8 @@ function CreateRoleDialog({
       setName('')
       setDescription('')
       setAgentType('claude-code')
-      setModel('__default__')
+      setProviderId(NONE_VALUE)
+      setModelId(NONE_VALUE)
       setPrompt('')
     }
     onOpenChange(open)
@@ -364,7 +434,7 @@ function CreateRoleDialog({
       <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>新建 Agent 角色</DialogTitle>
-          <DialogDescription>创建自定义 Agent 角色，配置模型和 System Prompt</DialogDescription>
+          <DialogDescription>创建自定义 Agent 角色，配置 Provider、Model 和 System Prompt</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -399,32 +469,49 @@ function CreateRoleDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <Label>Agent 类型</Label>
-              <Select value={agentType} onValueChange={setAgentType}>
+              <Select value={agentType} onValueChange={(v) => { setAgentType(v); setProviderId(NONE_VALUE); setModelId(NONE_VALUE) }}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {AGENT_TYPE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
+                  {Object.entries(agentTypes).map(([key, def]) => (
+                    <SelectItem key={key} value={key}>
+                      {def.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>默认模型</Label>
-              <Select value={model} onValueChange={setModel}>
+              <Label>Provider</Label>
+              <Select value={providerId} onValueChange={(v) => { setProviderId(v); setModelId(NONE_VALUE) }}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {MODEL_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
+                  <SelectItem value={NONE_VALUE}>使用默认</SelectItem>
+                  {filteredProviders.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} {p.isDefault ? '(默认)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Model</Label>
+              <Select value={modelId} onValueChange={setModelId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>使用默认</SelectItem>
+                  {filteredModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.displayName || m.modelName} {m.isDefault ? '(默认)' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -455,7 +542,8 @@ function CreateRoleDialog({
                 name,
                 description,
                 agentType,
-                defaultModel: model === '__default__' ? null : model,
+                providerId: providerId === NONE_VALUE ? null : providerId,
+                modelId: modelId === NONE_VALUE ? null : modelId,
                 systemPrompt: prompt,
               })
             }

@@ -15,6 +15,8 @@ import { artifactRoutes } from './routes/artifacts.js'
 import { nodeRunRoutes } from './routes/node-runs.js'
 import { openspecRoutes } from './routes/openspec.js'
 import { agentRoleRoutes } from './routes/agent-roles.js'
+import { agentTypeRoutes } from './routes/agent-types.js'
+import { agentProviderRoutes, agentModelRoutes } from './routes/agent-providers.js'
 import { authRoutes } from './routes/auth.js'
 import { wsGateway, startEventForwarding, stopEventForwarding } from './ws/gateway.js'
 
@@ -50,6 +52,9 @@ await app.register(flowRunRoutes, { prefix: '/api/flow-runs' })
 await app.register(artifactRoutes, { prefix: '/api/artifacts' })
 await app.register(nodeRunRoutes, { prefix: '/api/node-runs' })
 await app.register(openspecRoutes, { prefix: '/api/projects/:projectId/openspec' })
+await app.register(agentTypeRoutes, { prefix: '/api/agent-types' })
+await app.register(agentProviderRoutes, { prefix: '/api/agent-providers' })
+await app.register(agentModelRoutes, { prefix: '/api/agent-models' })
 await app.register(agentRoleRoutes, { prefix: '/api/agent-roles' })
 
 // WebSocket

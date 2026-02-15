@@ -197,6 +197,43 @@ export interface ArtifactVersion {
   createdAt: string
 }
 
+// Agent Type 定义（系统固化）
+export interface ProviderField {
+  key: string
+  label: string
+  type: 'string' | 'secret' | 'select'
+  required: boolean
+  placeholder?: string
+  options?: string[]
+}
+
+export interface AgentTypeDefinition {
+  name: string
+  description: string
+  providerFields: ProviderField[]
+}
+
+// Agent Provider
+export interface AgentProvider {
+  id: string
+  agentType: string
+  name: string
+  config: Record<string, any>
+  isDefault: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// Agent Model
+export interface AgentModel {
+  id: string
+  providerId: string
+  modelName: string
+  displayName: string | null
+  isDefault: boolean
+  createdAt: string
+}
+
 // Agent Role types
 export interface AgentRole {
   id: string
@@ -204,26 +241,12 @@ export interface AgentRole {
   name: string
   description: string | null
   agentType: string
-  defaultModel: string | null
+  providerId: string | null
+  modelId: string | null
   systemPrompt: string
   isBuiltin: boolean
   createdAt: string
   updatedAt: string
-}
-
-export interface CreateAgentRoleDto {
-  slug: string
-  name: string
-  description?: string
-  agentType?: string
-  defaultModel?: string | null
-  systemPrompt: string
-}
-
-export interface UpdateAgentRoleDto {
-  name?: string
-  description?: string
-  agentType?: string
-  defaultModel?: string | null
-  systemPrompt?: string
+  providerName?: string | null
+  modelName?: string | null
 }

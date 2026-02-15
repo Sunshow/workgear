@@ -16,19 +16,24 @@ import (
 // ClaudeCodeAdapter is a TypeAdapter for ClaudeCode CLI
 type ClaudeCodeAdapter struct {
 	promptBuilder *PromptBuilder
+	providerID    string
+	baseURL       string
+	authToken     string
 	model         string
 	image         string
 }
 
-// NewClaudeCodeAdapter creates a new ClaudeCode adapter
-func NewClaudeCodeAdapter(promptBuilder *PromptBuilder, model string) *ClaudeCodeAdapter {
-	// model can be empty; will be resolved at request time from role config or error out
+// NewClaudeCodeAdapter creates a new ClaudeCode adapter with provider-level config
+func NewClaudeCodeAdapter(promptBuilder *PromptBuilder, providerID, baseURL, authToken, model string) *ClaudeCodeAdapter {
 	image := os.Getenv("AGENT_DOCKER_IMAGE")
 	if image == "" {
 		image = "workgear/agent-claude:latest"
 	}
 	return &ClaudeCodeAdapter{
 		promptBuilder: promptBuilder,
+		providerID:    providerID,
+		baseURL:       baseURL,
+		authToken:     authToken,
 		model:         model,
 		image:         image,
 	}
@@ -48,15 +53,26 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 		"NODE_ID":      req.NodeID,
 	}
 
-	// Anthropic credentials (pass non-empty values only)
-	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
-		env["ANTHROPIC_API_KEY"] = v
+	// Anthropic credentials (from provider config, not env vars)
+	if a.authToken != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = a.authToken
 	}
-	if v := os.Getenv("ANTHROPIC_BASE_URL"); v != "" {
-		env["ANTHROPIC_BASE_URL"] = v
+	if a.baseURL != "" {
+		env["ANTHROPIC_BASE_URL"] = a.baseURL
 	}
-	if v := os.Getenv("ANTHROPIC_AUTH_TOKEN"); v != "" {
-		env["ANTHROPIC_AUTH_TOKEN"] = v
+	// Fallback to env vars if provider config is empty
+	if env["ANTHROPIC_AUTH_TOKEN"] == "" {
+		if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
+			env["ANTHROPIC_API_KEY"] = v
+		}
+		if v := os.Getenv("ANTHROPIC_AUTH_TOKEN"); v != "" {
+			env["ANTHROPIC_AUTH_TOKEN"] = v
+		}
+	}
+	if env["ANTHROPIC_BASE_URL"] == "" {
+		if v := os.Getenv("ANTHROPIC_BASE_URL"); v != "" {
+			env["ANTHROPIC_BASE_URL"] = v
+		}
 	}
 
 	// Git configuration

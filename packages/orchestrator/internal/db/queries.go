@@ -665,13 +665,13 @@ func (c *Client) UpdateFlowRunPR(ctx context.Context, flowRunID, branchName, prU
 // GetAgentRoleConfig retrieves agent role configuration by slug
 func (c *Client) GetAgentRoleConfig(ctx context.Context, slug string) (*AgentRoleConfig, error) {
 	row := c.pool.QueryRow(ctx, `
-		SELECT slug, agent_type, default_model, system_prompt
+		SELECT slug, agent_type, provider_id, model_id, system_prompt
 		FROM agent_roles
 		WHERE slug = $1
 	`, slug)
 
 	var config AgentRoleConfig
-	err := row.Scan(&config.Slug, &config.AgentType, &config.DefaultModel, &config.SystemPrompt)
+	err := row.Scan(&config.Slug, &config.AgentType, &config.ProviderID, &config.ModelID, &config.SystemPrompt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil // Role not found in DB, will use fallback
@@ -684,7 +684,7 @@ func (c *Client) GetAgentRoleConfig(ctx context.Context, slug string) (*AgentRol
 // GetAllAgentRoleConfigs retrieves all agent role configurations as a map
 func (c *Client) GetAllAgentRoleConfigs(ctx context.Context) (map[string]*AgentRoleConfig, error) {
 	rows, err := c.pool.Query(ctx, `
-		SELECT slug, agent_type, default_model, system_prompt
+		SELECT slug, agent_type, provider_id, model_id, system_prompt
 		FROM agent_roles
 		ORDER BY slug
 	`)
@@ -696,10 +696,151 @@ func (c *Client) GetAllAgentRoleConfigs(ctx context.Context) (map[string]*AgentR
 	result := make(map[string]*AgentRoleConfig)
 	for rows.Next() {
 		var config AgentRoleConfig
-		if err := rows.Scan(&config.Slug, &config.AgentType, &config.DefaultModel, &config.SystemPrompt); err != nil {
+		if err := rows.Scan(&config.Slug, &config.AgentType, &config.ProviderID, &config.ModelID, &config.SystemPrompt); err != nil {
 			return nil, fmt.Errorf("scan agent role config: %w", err)
 		}
 		result[config.Slug] = &config
+	}
+	return result, nil
+}
+
+// ─── Agent Provider Queries ───
+
+// GetAllAgentProviders retrieves all agent providers
+func (c *Client) GetAllAgentProviders(ctx context.Context) ([]*AgentProvider, error) {
+	rows, err := c.pool.Query(ctx, `
+		SELECT id, agent_type, name, config, is_default
+		FROM agent_providers
+		ORDER BY agent_type, created_at
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("get all agent providers: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*AgentProvider
+	for rows.Next() {
+		var p AgentProvider
+		var configJSON []byte
+		if err := rows.Scan(&p.ID, &p.AgentType, &p.Name, &configJSON, &p.IsDefault); err != nil {
+			return nil, fmt.Errorf("scan agent provider: %w", err)
+		}
+		if err := json.Unmarshal(configJSON, &p.Config); err != nil {
+			return nil, fmt.Errorf("unmarshal provider config: %w", err)
+		}
+		result = append(result, &p)
+	}
+	return result, nil
+}
+
+// GetAgentProvider retrieves a single agent provider by ID
+func (c *Client) GetAgentProvider(ctx context.Context, id string) (*AgentProvider, error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT id, agent_type, name, config, is_default
+		FROM agent_providers
+		WHERE id = $1
+	`, id)
+
+	var p AgentProvider
+	var configJSON []byte
+	err := row.Scan(&p.ID, &p.AgentType, &p.Name, &configJSON, &p.IsDefault)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent provider: %w", err)
+	}
+	if err := json.Unmarshal(configJSON, &p.Config); err != nil {
+		return nil, fmt.Errorf("unmarshal provider config: %w", err)
+	}
+	return &p, nil
+}
+
+// GetDefaultProviderForType retrieves the default provider for an agent type
+func (c *Client) GetDefaultProviderForType(ctx context.Context, agentType string) (*AgentProvider, error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT id, agent_type, name, config, is_default
+		FROM agent_providers
+		WHERE agent_type = $1 AND is_default = true
+		LIMIT 1
+	`, agentType)
+
+	var p AgentProvider
+	var configJSON []byte
+	err := row.Scan(&p.ID, &p.AgentType, &p.Name, &configJSON, &p.IsDefault)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get default provider: %w", err)
+	}
+	if err := json.Unmarshal(configJSON, &p.Config); err != nil {
+		return nil, fmt.Errorf("unmarshal provider config: %w", err)
+	}
+	return &p, nil
+}
+
+// ─── Agent Model Queries ───
+
+// GetAgentModel retrieves a single agent model by ID
+func (c *Client) GetAgentModel(ctx context.Context, id string) (*AgentModel, error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT id, provider_id, model_name, display_name, is_default
+		FROM agent_models
+		WHERE id = $1
+	`, id)
+
+	var m AgentModel
+	err := row.Scan(&m.ID, &m.ProviderID, &m.ModelName, &m.DisplayName, &m.IsDefault)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent model: %w", err)
+	}
+	return &m, nil
+}
+
+// GetDefaultModelForProvider retrieves the default model for a provider
+func (c *Client) GetDefaultModelForProvider(ctx context.Context, providerID string) (*AgentModel, error) {
+	row := c.pool.QueryRow(ctx, `
+		SELECT id, provider_id, model_name, display_name, is_default
+		FROM agent_models
+		WHERE provider_id = $1 AND is_default = true
+		LIMIT 1
+	`, providerID)
+
+	var m AgentModel
+	err := row.Scan(&m.ID, &m.ProviderID, &m.ModelName, &m.DisplayName, &m.IsDefault)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get default model: %w", err)
+	}
+	return &m, nil
+}
+
+// GetModelsForProvider retrieves all models for a provider
+func (c *Client) GetModelsForProvider(ctx context.Context, providerID string) ([]*AgentModel, error) {
+	rows, err := c.pool.Query(ctx, `
+		SELECT id, provider_id, model_name, display_name, is_default
+		FROM agent_models
+		WHERE provider_id = $1
+		ORDER BY created_at
+	`, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("get models for provider: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*AgentModel
+	for rows.Next() {
+		var m AgentModel
+		if err := rows.Scan(&m.ID, &m.ProviderID, &m.ModelName, &m.DisplayName, &m.IsDefault); err != nil {
+			return nil, fmt.Errorf("scan agent model: %w", err)
+		}
+		result = append(result, &m)
 	}
 	return result, nil
 }

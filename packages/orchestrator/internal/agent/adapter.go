@@ -145,41 +145,83 @@ func (a *CombinedAdapter) Execute(ctx context.Context, req *AgentRequest) (*Agen
 	return a.typeAdapter.ParseResponse(execResp)
 }
 
+// RoleMapping maps a role to a specific provider and model
+type RoleMapping struct {
+	ProviderID string
+	ModelName  string
+}
+
 // Registry manages available agent adapters
 type Registry struct {
-	adapters map[string]Adapter // name → adapter
-	roles    map[string]string  // role → adapter name
+	adapters map[string]Adapter      // provider_id → adapter (new)
+	legacy   map[string]Adapter      // name → adapter (backward compat)
+	roles    map[string]*RoleMapping // role → mapping
 }
 
 // NewRegistry creates a new agent registry
 func NewRegistry() *Registry {
 	return &Registry{
 		adapters: make(map[string]Adapter),
-		roles:    make(map[string]string),
+		legacy:   make(map[string]Adapter),
+		roles:    make(map[string]*RoleMapping),
 	}
 }
 
-// Register adds an adapter to the registry
+// Register adds an adapter to the registry by name (backward compat)
 func (r *Registry) Register(adapter Adapter) {
-	r.adapters[adapter.Name()] = adapter
+	r.legacy[adapter.Name()] = adapter
 }
 
-// MapRole maps an agent role to an adapter name
+// RegisterProvider adds an adapter to the registry by provider ID
+func (r *Registry) RegisterProvider(providerID string, adapter Adapter) {
+	r.adapters[providerID] = adapter
+}
+
+// MapRole maps an agent role to an adapter name (backward compat)
 func (r *Registry) MapRole(role, adapterName string) {
-	r.roles[role] = adapterName
+	r.roles[role] = &RoleMapping{ProviderID: adapterName}
 }
 
-// GetAdapter returns the adapter for a given role
+// MapRoleToProvider maps an agent role to a provider ID and model name
+func (r *Registry) MapRoleToProvider(role, providerID, modelName string) {
+	r.roles[role] = &RoleMapping{
+		ProviderID: providerID,
+		ModelName:  modelName,
+	}
+}
+
+// GetAdapter returns the adapter for a given role (backward compat)
 func (r *Registry) GetAdapter(role string) (Adapter, error) {
-	adapterName, ok := r.roles[role]
+	mapping, ok := r.roles[role]
 	if !ok {
 		return nil, &NoAdapterError{Role: role}
 	}
-	adapter, ok := r.adapters[adapterName]
-	if !ok {
-		return nil, &NoAdapterError{Role: role}
+	// Try provider-based lookup first
+	if adapter, ok := r.adapters[mapping.ProviderID]; ok {
+		return adapter, nil
 	}
-	return adapter, nil
+	// Fallback to legacy name-based lookup
+	if adapter, ok := r.legacy[mapping.ProviderID]; ok {
+		return adapter, nil
+	}
+	return nil, &NoAdapterError{Role: role}
+}
+
+// GetAdapterForRole returns the adapter and model name for a given role
+func (r *Registry) GetAdapterForRole(role string) (Adapter, string, error) {
+	mapping, ok := r.roles[role]
+	if !ok {
+		return nil, "", &NoAdapterError{Role: role}
+	}
+	// Try provider-based lookup first
+	if adapter, ok := r.adapters[mapping.ProviderID]; ok {
+		return adapter, mapping.ModelName, nil
+	}
+	// Fallback to legacy name-based lookup
+	if adapter, ok := r.legacy[mapping.ProviderID]; ok {
+		return adapter, mapping.ModelName, nil
+	}
+	return nil, "", &NoAdapterError{Role: role}
 }
 
 // NoAdapterError is returned when no adapter is found for a role

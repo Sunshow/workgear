@@ -63,10 +63,29 @@ const (
 	StatusCancelled    = "cancelled"
 )
 
+// AgentProvider holds agent provider configuration from database
+type AgentProvider struct {
+	ID        string
+	AgentType string
+	Name      string
+	Config    map[string]interface{} // JSON config
+	IsDefault bool
+}
+
+// AgentModel holds agent model configuration from database
+type AgentModel struct {
+	ID          string
+	ProviderID  string
+	ModelName   string
+	DisplayName *string
+	IsDefault   bool
+}
+
 // AgentRoleConfig holds agent role configuration from database
 type AgentRoleConfig struct {
-	Slug         string
-	AgentType    string
-	DefaultModel *string // nil = use global default CLAUDE_MODEL
+	Slug       string
+	AgentType  string
+	ProviderID *string // nil = use default provider for agent_type
+	ModelID    *string // nil = use default model for provider
 	SystemPrompt string
 }

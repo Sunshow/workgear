@@ -45,7 +45,7 @@ func main() {
 	// 2. Create event bus
 	eventBus := event.NewBus(sugar)
 
-	// 3. Create agent registry (Docker + API Key required)
+	// 3. Create agent registry (load from database)
 	registry := agent.NewRegistry()
 
 	promptBuilder := agent.NewPromptBuilder()
@@ -55,21 +55,117 @@ func main() {
 	}
 	defer dockerExec.Close()
 
-	if os.Getenv("ANTHROPIC_API_KEY") == "" && os.Getenv("ANTHROPIC_AUTH_TOKEN") == "" {
-		sugar.Fatalf("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN must be set")
+	// Load providers from database
+	providers, err := dbClient.GetAllAgentProviders(ctx)
+	if err != nil {
+		sugar.Fatalf("Failed to load agent providers: %v", err)
 	}
 
-	claudeAdapter := agent.NewCombinedAdapter(
-		agent.NewClaudeCodeAdapter(promptBuilder, os.Getenv("CLAUDE_MODEL")),
-		dockerExec,
-	)
-	registry.Register(claudeAdapter)
-	registry.MapRole("general-developer", "claude-code")
-	registry.MapRole("requirement-analyst", "claude-code")
-	registry.MapRole("code-reviewer", "claude-code")
-	registry.MapRole("qa-engineer", "claude-code")
-	registry.MapRole("spec-architect", "claude-code")
-	sugar.Info("ClaudeCode adapter enabled (Docker + API credentials verified)")
+	if len(providers) > 0 {
+		for _, p := range providers {
+			switch p.AgentType {
+			case "claude-code":
+				baseURL, _ := p.Config["base_url"].(string)
+				authToken, _ := p.Config["auth_token"].(string)
+
+				// Get default model for this provider
+				defaultModel, _ := dbClient.GetDefaultModelForProvider(ctx, p.ID)
+				modelName := ""
+				if defaultModel != nil {
+					modelName = defaultModel.ModelName
+				}
+
+				claudeAdapter := agent.NewClaudeCodeAdapter(promptBuilder, p.ID, baseURL, authToken, modelName)
+				registry.RegisterProvider(p.ID, agent.NewCombinedAdapter(claudeAdapter, dockerExec))
+				sugar.Infow("Registered provider", "id", p.ID, "type", p.AgentType, "name", p.Name, "default", p.IsDefault)
+			// TODO: case "codex", "droid" — future agent types
+			default:
+				sugar.Warnw("Unknown agent type, skipping", "type", p.AgentType, "name", p.Name)
+			}
+		}
+	} else {
+		// Fallback: use environment variables (backward compat)
+		if os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" {
+			claudeAdapter := agent.NewClaudeCodeAdapter(promptBuilder, "env-fallback", "", "", os.Getenv("CLAUDE_MODEL"))
+			combined := agent.NewCombinedAdapter(claudeAdapter, dockerExec)
+			registry.RegisterProvider("env-fallback", combined)
+			sugar.Warn("No providers in database, using environment variable fallback")
+		} else {
+			sugar.Fatalf("No agent providers configured in database and no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN in environment")
+		}
+	}
+
+	// Load role mappings from database
+	roleConfigs, err := dbClient.GetAllAgentRoleConfigs(ctx)
+	if err != nil {
+		sugar.Fatalf("Failed to load agent role configs: %v", err)
+	}
+
+	for slug, rc := range roleConfigs {
+		providerID := ""
+		modelName := ""
+
+		if rc.ProviderID != nil {
+			// Role has explicit provider
+			providerID = *rc.ProviderID
+			if rc.ModelID != nil {
+				// Role has explicit model
+				m, _ := dbClient.GetAgentModel(ctx, *rc.ModelID)
+				if m != nil {
+					modelName = m.ModelName
+				}
+			} else {
+				// Use provider's default model
+				m, _ := dbClient.GetDefaultModelForProvider(ctx, providerID)
+				if m != nil {
+					modelName = m.ModelName
+				}
+			}
+		} else {
+			// Use default provider for agent type
+			dp, _ := dbClient.GetDefaultProviderForType(ctx, rc.AgentType)
+			if dp != nil {
+				providerID = dp.ID
+				m, _ := dbClient.GetDefaultModelForProvider(ctx, dp.ID)
+				if m != nil {
+					modelName = m.ModelName
+				}
+			} else if len(providers) == 0 {
+				// Env fallback
+				providerID = "env-fallback"
+				modelName = os.Getenv("CLAUDE_MODEL")
+			}
+		}
+
+		if providerID != "" {
+			registry.MapRoleToProvider(slug, providerID, modelName)
+			sugar.Infow("Mapped role", "role", slug, "provider", providerID, "model", modelName)
+		} else {
+			sugar.Warnw("No provider found for role", "role", slug, "agent_type", rc.AgentType)
+		}
+	}
+
+	// Ensure common roles are mapped (fallback for roles not in DB)
+	defaultRoles := []string{"general-developer", "requirement-analyst", "code-reviewer", "qa-engineer", "spec-architect"}
+	for _, role := range defaultRoles {
+		if _, err := registry.GetAdapter(role); err != nil {
+			// Try to map to default provider for claude-code
+			dp, _ := dbClient.GetDefaultProviderForType(ctx, "claude-code")
+			if dp != nil {
+				m, _ := dbClient.GetDefaultModelForProvider(ctx, dp.ID)
+				mn := ""
+				if m != nil {
+					mn = m.ModelName
+				}
+				registry.MapRoleToProvider(role, dp.ID, mn)
+				sugar.Infow("Auto-mapped default role", "role", role, "provider", dp.ID)
+			} else if len(providers) == 0 {
+				registry.MapRoleToProvider(role, "env-fallback", os.Getenv("CLAUDE_MODEL"))
+			}
+		}
+	}
+
+	sugar.Infof("Agent registry initialized with %d providers", len(providers))
 
 	// 4. Create flow executor
 	executor := engine.NewFlowExecutor(dbClient, eventBus, registry, sugar)

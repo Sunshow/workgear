@@ -1,15 +1,34 @@
 import type { FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { agentRoles } from '../db/schema.js'
+import { agentRoles, agentProviders, agentModels } from '../db/schema.js'
 
 export async function agentRoleRoutes(app: FastifyInstance) {
-  // 获取所有角色
+  // 获取所有角色（含 provider 和 model 信息）
   app.get('/', async () => {
-    return db
+    const roles = await db
       .select()
       .from(agentRoles)
       .orderBy(agentRoles.createdAt)
+
+    // 批量查询关联的 provider 和 model 名称
+    const result = []
+    for (const role of roles) {
+      let providerName: string | null = null
+      let modelName: string | null = null
+
+      if (role.providerId) {
+        const p = await db.select().from(agentProviders).where(eq(agentProviders.id, role.providerId))
+        if (p.length > 0) providerName = p[0].name
+      }
+      if (role.modelId) {
+        const m = await db.select().from(agentModels).where(eq(agentModels.id, role.modelId))
+        if (m.length > 0) modelName = m[0].modelName
+      }
+
+      result.push({ ...role, providerName, modelName })
+    }
+    return result
   })
 
   // 获取单个角色
@@ -32,11 +51,12 @@ export async function agentRoleRoutes(app: FastifyInstance) {
       name: string
       description?: string
       agentType?: string
-      defaultModel?: string | null
+      providerId?: string | null
+      modelId?: string | null
       systemPrompt: string
     }
   }>('/', async (request, reply) => {
-    const { slug, name, description, agentType, defaultModel, systemPrompt } = request.body
+    const { slug, name, description, agentType, providerId, modelId, systemPrompt } = request.body
 
     if (!slug || !name || !systemPrompt) {
       return reply.status(400).send({ error: 'slug, name, systemPrompt are required' })
@@ -49,7 +69,8 @@ export async function agentRoleRoutes(app: FastifyInstance) {
         name,
         description: description || null,
         agentType: agentType || 'claude-code',
-        defaultModel: defaultModel || null,
+        providerId: providerId || null,
+        modelId: modelId || null,
         systemPrompt,
         isBuiltin: false,
       })
@@ -65,14 +86,14 @@ export async function agentRoleRoutes(app: FastifyInstance) {
       name?: string
       description?: string
       agentType?: string
-      defaultModel?: string | null
+      providerId?: string | null
+      modelId?: string | null
       systemPrompt?: string
     }
   }>('/:id', async (request, reply) => {
     const { id } = request.params
-    const { name, description, agentType, defaultModel, systemPrompt } = request.body
+    const { name, description, agentType, providerId, modelId, systemPrompt } = request.body
 
-    // Check existence
     const existing = await db
       .select()
       .from(agentRoles)
@@ -85,7 +106,8 @@ export async function agentRoleRoutes(app: FastifyInstance) {
     if (name !== undefined) updateData.name = name
     if (description !== undefined) updateData.description = description
     if (agentType !== undefined) updateData.agentType = agentType
-    if (defaultModel !== undefined) updateData.defaultModel = defaultModel
+    if (providerId !== undefined) updateData.providerId = providerId
+    if (modelId !== undefined) updateData.modelId = modelId
     if (systemPrompt !== undefined) updateData.systemPrompt = systemPrompt
 
     const result = await db
