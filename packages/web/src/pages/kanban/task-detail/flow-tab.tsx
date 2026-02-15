@@ -10,6 +10,7 @@ import { XCircle, CheckCircle, RotateCcw, Clock, Play, AlertCircle, Pencil, Load
 import { NodeLogDialog } from '@/components/node-log-dialog'
 import { ArtifactPreviewCard } from '@/components/artifact-preview-card'
 import { ArtifactEditorDialog } from '@/components/artifact-editor-dialog'
+import { FlowErrorDialog } from '@/components/flow-error-dialog'
 
 interface FlowTabProps {
   taskId: string
@@ -56,6 +57,7 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
   const [cancelling, setCancelling] = useState(false)
   const [logDialogNode, setLogDialogNode] = useState<NodeRun | null>(null)
   // Artifact editor state
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false)
   const [editingArtifact, setEditingArtifact] = useState<Artifact | null>(null)
   const [editingContent, setEditingContent] = useState('')
   const [editingVersion, setEditingVersion] = useState(0)
@@ -158,8 +160,16 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
       </div>
 
       {latestFlow.error && (
-        <div className="rounded-md bg-destructive/10 p-3">
-          <p className="text-sm text-destructive">{latestFlow.error}</p>
+        <div className="rounded-md bg-destructive/10 p-3 space-y-2">
+          <p className="text-sm text-destructive line-clamp-3">{latestFlow.error}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setErrorDialogOpen(true)}
+            className="h-7 text-xs"
+          >
+            查看详情
+          </Button>
         </div>
       )}
 
@@ -190,6 +200,13 @@ export function FlowTab({ taskId, refreshKey }: FlowTabProps) {
 
       {/* Log dialog */}
       <NodeLogDialog nodeRun={logDialogNode} open={!!logDialogNode} onClose={() => setLogDialogNode(null)} />
+
+      {/* Error dialog */}
+      <FlowErrorDialog
+        error={latestFlow?.error || ''}
+        open={errorDialogOpen}
+        onOpenChange={setErrorDialogOpen}
+      />
 
       {/* Artifact editor dialog */}
       <ArtifactEditorDialog
