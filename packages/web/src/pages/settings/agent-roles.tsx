@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Bot, Plus, Pencil, Trash2, Save, X } from 'lucide-react'
+import { Bot, Plus, Pencil, Trash2, Save, X, PlayCircle, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { AgentRole, AgentTypeDefinition, AgentProvider, AgentModel } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,7 @@ export function AgentRolesPage() {
   const [loading, setLoading] = useState(true)
   const [editingRole, setEditingRole] = useState<AgentRole | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [testingRole, setTestingRole] = useState<AgentRole | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -151,6 +152,7 @@ export function AgentRolesPage() {
               onCancel={() => setEditingRole(null)}
               onSave={(updates) => handleSave(role, updates)}
               onDelete={() => handleDelete(role)}
+              onTest={() => setTestingRole(role)}
               saving={saving}
             />
           ))}
@@ -166,6 +168,14 @@ export function AgentRolesPage() {
         onCreate={handleCreate}
         saving={saving}
       />
+
+      {testingRole && (
+        <TestAgentDialog
+          open={!!testingRole}
+          onOpenChange={(open) => { if (!open) setTestingRole(null) }}
+          role={testingRole}
+        />
+      )}
     </div>
   )
 }
@@ -180,6 +190,7 @@ function RoleCard({
   onCancel,
   onSave,
   onDelete,
+  onTest,
   saving,
 }: {
   role: AgentRole
@@ -191,6 +202,7 @@ function RoleCard({
   onCancel: () => void
   onSave: (updates: Partial<AgentRole>) => void
   onDelete: () => void
+  onTest: () => void
   saving: boolean
 }) {
   const [editName, setEditName] = useState(role.name)
@@ -367,6 +379,9 @@ function RoleCard({
         </div>
       </div>
       <div className="flex items-center gap-1">
+        <Button variant="ghost" size="sm" onClick={onTest} title="测试">
+          <PlayCircle className="h-4 w-4" />
+        </Button>
         <Button variant="ghost" size="sm" onClick={onEdit}>
           <Pencil className="h-4 w-4" />
         </Button>
@@ -549,6 +564,124 @@ function CreateRoleDialog({
             }
           >
             {saving ? '创建中...' : '创建'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function TestAgentDialog({
+  open,
+  onOpenChange,
+  role,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  role: AgentRole
+}) {
+  const [prompt, setPrompt] = useState('Echo "Agent test successful" and exit')
+  const [testing, setTesting] = useState(false)
+  const [logs, setLogs] = useState<string[]>([])
+  const [result, setResult] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleTest() {
+    setTesting(true)
+    setLogs([])
+    setResult(null)
+    setError(null)
+
+    try {
+      const response = await api.post(`agent-roles/${role.id}/test`, {
+        json: { prompt }
+      }).json<{ success: boolean; result?: string; error?: string; logs?: string[] }>()
+
+      if (response.success) {
+        if (response.result) {
+          try {
+            setResult(JSON.parse(response.result))
+          } catch {
+            setResult(response.result)
+          }
+        }
+        setLogs(response.logs || [])
+      } else {
+        setError(response.error || 'Test failed')
+        setLogs(response.logs || [])
+      }
+    } catch (err: any) {
+      setError(err.message || 'Network error')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>测试 Agent 角色: {role.name}</DialogTitle>
+          <DialogDescription>
+            输入测试提示词，验证 Agent 配置是否正常工作
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto space-y-4 py-2">
+          <div>
+            <Label>测试提示词</Label>
+            <Textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              className="mt-1 min-h-[80px] font-mono text-sm"
+              placeholder='Echo "Agent test successful" and exit'
+              disabled={testing}
+            />
+          </div>
+
+          {testing && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              执行中...
+            </div>
+          )}
+
+          {logs.length > 0 && (
+            <div>
+              <Label>执行日志</Label>
+              <div className="mt-1 bg-muted rounded-md p-3 font-mono text-xs max-h-[300px] overflow-y-auto">
+                {logs.map((log, i) => (
+                  <div key={i} className="whitespace-pre-wrap">{log}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {result && (
+            <div>
+              <Label className="text-green-600">执行成功</Label>
+              <div className="mt-1 bg-green-50 border border-green-200 rounded-md p-3 text-sm">
+                <pre className="whitespace-pre-wrap">{JSON.stringify(result, null, 2)}</pre>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div>
+              <Label className="text-destructive">执行失败</Label>
+              <div className="mt-1 bg-destructive/10 border border-destructive/20 rounded-md p-3 text-sm text-destructive">
+                {error}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            关闭
+          </Button>
+          <Button disabled={testing || !prompt.trim()} onClick={handleTest}>
+            {testing ? '执行中...' : '开始测试'}
           </Button>
         </DialogFooter>
       </DialogContent>

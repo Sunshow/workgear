@@ -16,6 +16,9 @@ service OrchestratorService {
   rpc SubmitHumanInput(SubmitHumanInputRequest) returns (NodeActionResponse);
   rpc RetryNode(RetryNodeRequest) returns (NodeActionResponse);
 
+  // Agent 测试
+  rpc TestAgent(TestAgentRequest) returns (TestAgentResponse);
+
   // 事件流（服务端流式推送）
   rpc EventStream(EventStreamRequest) returns (stream ServerEvent);
 }
@@ -73,6 +76,25 @@ message RetryNodeRequest {
 message NodeActionResponse {
   bool success = 1;
   string error = 2;
+}
+
+// ─── Agent 测试 ───
+
+message TestAgentRequest {
+  string role_id = 1;
+  string agent_type = 2;
+  optional string provider_id = 3;
+  map<string, string> provider_config = 4;
+  optional string model_name = 5;
+  string system_prompt = 6;
+  string test_prompt = 7;
+}
+
+message TestAgentResponse {
+  bool success = 1;
+  optional string result = 2;
+  optional string error = 3;
+  repeated string logs = 4;
 }
 
 // ─── 事件流 ───

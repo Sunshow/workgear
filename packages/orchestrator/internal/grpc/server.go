@@ -3,11 +3,14 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 	grpclib "google.golang.org/grpc"
 
+	"github.com/sunshow/workgear/orchestrator/internal/agent"
 	"github.com/sunshow/workgear/orchestrator/internal/engine"
 	"github.com/sunshow/workgear/orchestrator/internal/event"
 	pb "github.com/sunshow/workgear/orchestrator/internal/grpc/pb"
@@ -16,17 +19,21 @@ import (
 // OrchestratorServer implements the gRPC OrchestratorService
 type OrchestratorServer struct {
 	pb.UnimplementedOrchestratorServiceServer
-	executor *engine.FlowExecutor
-	eventBus *event.Bus
-	logger   *zap.SugaredLogger
+	executor        *engine.FlowExecutor
+	eventBus        *event.Bus
+	registry        *agent.Registry
+	factoryRegistry *agent.AgentFactoryRegistry
+	logger          *zap.SugaredLogger
 }
 
 // NewOrchestratorServer creates a new gRPC server
-func NewOrchestratorServer(executor *engine.FlowExecutor, eventBus *event.Bus, logger *zap.SugaredLogger) *OrchestratorServer {
+func NewOrchestratorServer(executor *engine.FlowExecutor, eventBus *event.Bus, registry *agent.Registry, factoryRegistry *agent.AgentFactoryRegistry, logger *zap.SugaredLogger) *OrchestratorServer {
 	return &OrchestratorServer{
-		executor: executor,
-		eventBus: eventBus,
-		logger:   logger,
+		executor:        executor,
+		eventBus:        eventBus,
+		registry:        registry,
+		factoryRegistry: factoryRegistry,
+		logger:          logger,
 	}
 }
 
@@ -182,4 +189,123 @@ func (s *OrchestratorServer) EventStream(req *pb.EventStreamRequest, stream pb.O
 			}
 		}
 	}
+}
+
+// ─── Agent Test ───
+
+func (s *OrchestratorServer) TestAgent(ctx context.Context, req *pb.TestAgentRequest) (*pb.TestAgentResponse, error) {
+	s.logger.Infow("TestAgent called",
+		"role_id", req.RoleId,
+		"agent_type", req.AgentType,
+		"prompt_len", len(req.TestPrompt),
+	)
+
+	// Build AgentRequest with test mode
+	agentReq := &agent.AgentRequest{
+		TaskID:     "test-" + req.RoleId,
+		FlowRunID:  "test-flow",
+		NodeID:     "test-node",
+		Mode:       "test",
+		Prompt:     req.TestPrompt,
+		RolePrompt: req.SystemPrompt,
+		Context:    make(map[string]any),
+	}
+
+	// Set model from request
+	if req.ModelName != nil {
+		agentReq.Model = *req.ModelName
+	}
+
+	// Try to get adapter from registry by role_id first, then build ad-hoc
+	var adapterInstance agent.Adapter
+
+	// Try provider-based lookup
+	providerID := ""
+	if req.ProviderId != nil {
+		providerID = *req.ProviderId
+	}
+
+	if providerID != "" {
+		// Try registry first (adapter already registered at startup)
+		if registeredAdapter, ok := s.registry.GetAdapterByProvider(providerID); ok {
+			adapterInstance = registeredAdapter
+		} else {
+			// Build a temporary adapter via factory with the provider config from the request
+			configMap := make(map[string]any)
+			for k, v := range req.ProviderConfig {
+				configMap[k] = v
+			}
+
+			modelName := ""
+			if req.ModelName != nil {
+				modelName = *req.ModelName
+			}
+
+			adapter, err := s.factoryRegistry.CreateAdapter(s.logger, req.AgentType, providerID, configMap, modelName)
+			if err != nil {
+				return &pb.TestAgentResponse{
+					Success: false,
+					Error:   strPtr(err.Error()),
+				}, nil
+			}
+			adapterInstance = adapter
+		}
+	} else {
+		return &pb.TestAgentResponse{
+			Success: false,
+			Error:   strPtr("No provider_id specified for test"),
+		}, nil
+	}
+
+	// Collect logs
+	var logs []string
+	var logsMu sync.Mutex
+	if combined, ok := adapterInstance.(*agent.CombinedAdapter); ok {
+		if dockerExec, ok := combined.Executor().(*agent.DockerExecutor); ok {
+			dockerExec.SetLogEventCallback(func(evt agent.ClaudeStreamEvent) {
+				logLine := fmt.Sprintf("[%s] %s", evt.Type, evt.Subtype)
+				if evt.Message != nil {
+					for _, block := range evt.Message.Content {
+						if block.Type == "text" && block.Text != "" {
+							logLine += ": " + truncateStr(block.Text, 200)
+						}
+					}
+				}
+				logsMu.Lock()
+				logs = append(logs, logLine)
+				logsMu.Unlock()
+			})
+		}
+	}
+
+	// Execute with timeout
+	testCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	resp, err := adapterInstance.Execute(testCtx, agentReq)
+	if err != nil {
+		return &pb.TestAgentResponse{
+			Success: false,
+			Error:   strPtr(err.Error()),
+			Logs:    logs,
+		}, nil
+	}
+
+	// Serialize result
+	resultJSON, _ := json.Marshal(resp.Output)
+
+	return &pb.TestAgentResponse{
+		Success: true,
+		Result:  strPtr(string(resultJSON)),
+		Logs:    logs,
+	}, nil
+}
+
+func strPtr(s string) *string { return &s }
+
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

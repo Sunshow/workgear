@@ -207,6 +207,14 @@ func (r *Registry) GetAdapter(role string) (Adapter, error) {
 	return nil, &NoAdapterError{Role: role}
 }
 
+// GetAdapterByProvider returns the adapter for a given provider ID (direct lookup)
+func (r *Registry) GetAdapterByProvider(providerID string) (Adapter, bool) {
+	if adapter, ok := r.adapters[providerID]; ok {
+		return adapter, true
+	}
+	return nil, false
+}
+
 // GetAdapterForRole returns the adapter and model name for a given role
 func (r *Registry) GetAdapterForRole(role string) (Adapter, string, error) {
 	mapping, ok := r.roles[role]

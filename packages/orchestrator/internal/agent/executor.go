@@ -248,11 +248,14 @@ func (e *DockerExecutor) streamLogs(ctx context.Context, containerID string) err
 			e.logger.Debugw("Raw stderr line", "line", line)
 		}
 
-		// Try to parse as Claude stream-json event
+		// Try to parse as stream-json event (only if line looks like JSON)
+		if len(line) == 0 || line[0] != '{' {
+			continue
+		}
+
 		var event ClaudeStreamEvent
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			// Not a JSON line (e.g., [agent] logs)
-			e.logger.Debugw("Not a valid stream-json event", "error", err.Error())
+			e.logger.Debugw("Failed to parse stream-json event", "error", err.Error())
 			continue
 		}
 

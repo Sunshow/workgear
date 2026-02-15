@@ -49,11 +49,11 @@ func main() {
 	registry := agent.NewRegistry()
 
 	promptBuilder := agent.NewPromptBuilder()
-	dockerExec, err := agent.NewDockerExecutor(sugar)
-	if err != nil {
-		sugar.Fatalf("Docker is required but not available: %v", err)
-	}
-	defer dockerExec.Close()
+
+	// Create agent factory registry
+	factoryRegistry := agent.NewAgentFactoryRegistry()
+	factoryRegistry.Register(&agent.ClaudeCodeFactory{PromptBuilder: promptBuilder})
+	factoryRegistry.Register(&agent.CodexFactory{PromptBuilder: promptBuilder})
 
 	// Load providers from database
 	providers, err := dbClient.GetAllAgentProviders(ctx)
@@ -63,32 +63,35 @@ func main() {
 
 	if len(providers) > 0 {
 		for _, p := range providers {
-			switch p.AgentType {
-			case "claude-code":
-				baseURL, _ := p.Config["base_url"].(string)
-				authToken, _ := p.Config["auth_token"].(string)
-
-				// Get default model for this provider
-				defaultModel, _ := dbClient.GetDefaultModelForProvider(ctx, p.ID)
-				modelName := ""
-				if defaultModel != nil {
-					modelName = defaultModel.ModelName
-				}
-
-				claudeAdapter := agent.NewClaudeCodeAdapter(promptBuilder, p.ID, baseURL, authToken, modelName)
-				registry.RegisterProvider(p.ID, agent.NewCombinedAdapter(claudeAdapter, dockerExec))
-				sugar.Infow("Registered provider", "id", p.ID, "type", p.AgentType, "name", p.Name, "default", p.IsDefault)
-			// TODO: case "codex", "droid" — future agent types
-			default:
-				sugar.Warnw("Unknown agent type, skipping", "type", p.AgentType, "name", p.Name)
+			defaultModel, _ := dbClient.GetDefaultModelForProvider(ctx, p.ID)
+			modelName := ""
+			if defaultModel != nil {
+				modelName = defaultModel.ModelName
 			}
+
+			adapter, err := factoryRegistry.CreateAdapter(sugar, p.AgentType, p.ID, p.Config, modelName)
+			if err != nil {
+				sugar.Warnw("Failed to create adapter, skipping", "type", p.AgentType, "name", p.Name, "error", err)
+				continue
+			}
+			registry.RegisterProvider(p.ID, adapter)
+			sugar.Infow("Registered provider", "id", p.ID, "type", p.AgentType, "name", p.Name, "default", p.IsDefault)
 		}
 	} else {
 		// Fallback: use environment variables (backward compat)
 		if os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" {
-			claudeAdapter := agent.NewClaudeCodeAdapter(promptBuilder, "env-fallback", "", "", os.Getenv("CLAUDE_MODEL"))
-			combined := agent.NewCombinedAdapter(claudeAdapter, dockerExec)
-			registry.RegisterProvider("env-fallback", combined)
+			envConfig := map[string]any{
+				"auth_token": os.Getenv("ANTHROPIC_AUTH_TOKEN"),
+				"base_url":   os.Getenv("ANTHROPIC_BASE_URL"),
+			}
+			if envConfig["auth_token"] == "" {
+				envConfig["auth_token"] = os.Getenv("ANTHROPIC_API_KEY")
+			}
+			adapter, err := factoryRegistry.CreateAdapter(sugar, "claude-code", "env-fallback", envConfig, os.Getenv("CLAUDE_MODEL"))
+			if err != nil {
+				sugar.Fatalf("Failed to create env fallback adapter: %v", err)
+			}
+			registry.RegisterProvider("env-fallback", adapter)
 			sugar.Warn("No providers in database, using environment variable fallback")
 		} else {
 			sugar.Fatalf("No agent providers configured in database and no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN in environment")
@@ -189,7 +192,7 @@ func main() {
 	healthServer.SetServingStatus("orchestrator", healthpb.HealthCheckResponse_SERVING)
 
 	// Register orchestrator service
-	orchServer := grpcserver.NewOrchestratorServer(executor, eventBus, sugar)
+	orchServer := grpcserver.NewOrchestratorServer(executor, eventBus, registry, factoryRegistry, sugar)
 	orchServer.Register(server)
 
 	sugar.Infof("WorkGear Orchestrator gRPC server listening on :%s", port)

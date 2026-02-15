@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { agentRoles, agentProviders, agentModels } from '../db/schema.js'
+import * as orchestrator from '../grpc/client.js'
 
 export async function agentRoleRoutes(app: FastifyInstance) {
   // 获取所有角色（含 provider 和 model 信息）
@@ -136,5 +137,112 @@ export async function agentRoleRoutes(app: FastifyInstance) {
 
     await db.delete(agentRoles).where(eq(agentRoles.id, id))
     return reply.status(204).send()
+  })
+
+  // 测试角色
+  app.post<{
+    Params: { id: string }
+    Body: { prompt: string }
+  }>('/:id/test', async (request, reply) => {
+    const { id } = request.params
+    const { prompt } = request.body
+
+    if (!prompt || !prompt.trim()) {
+      return reply.status(400).send({ error: 'prompt is required' })
+    }
+
+    // 查询角色配置
+    const roleResult = await db
+      .select()
+      .from(agentRoles)
+      .where(eq(agentRoles.id, id))
+    
+    if (roleResult.length === 0) {
+      return reply.status(404).send({ error: 'Agent role not found' })
+    }
+
+    const role = roleResult[0]
+
+    // 解析 Provider：如果角色没有指定，使用该 agentType 的默认 Provider
+    let resolvedProviderId = role.providerId
+    let providerConfig: Record<string, string> = {}
+
+    if (!resolvedProviderId) {
+      const defaultProvider = await db
+        .select()
+        .from(agentProviders)
+        .where(eq(agentProviders.agentType, role.agentType))
+      const found = defaultProvider.find((p) => p.isDefault) || defaultProvider[0]
+      if (found) {
+        resolvedProviderId = found.id
+        const config = found.config as Record<string, any>
+        providerConfig = Object.fromEntries(
+          Object.entries(config).map(([k, v]) => [k, String(v)])
+        )
+      }
+    } else {
+      const providerResult = await db
+        .select()
+        .from(agentProviders)
+        .where(eq(agentProviders.id, resolvedProviderId))
+      if (providerResult.length > 0) {
+        const config = providerResult[0].config as Record<string, any>
+        providerConfig = Object.fromEntries(
+          Object.entries(config).map(([k, v]) => [k, String(v)])
+        )
+      }
+    }
+
+    if (!resolvedProviderId) {
+      return reply.status(400).send({
+        error: `No provider configured for agent type: ${role.agentType}`,
+      })
+    }
+
+    // 解析 Model：如果角色没有指定，使用 Provider 的默认 Model
+    let modelName: string | undefined
+    if (role.modelId) {
+      const modelResult = await db
+        .select()
+        .from(agentModels)
+        .where(eq(agentModels.id, role.modelId))
+      if (modelResult.length > 0) {
+        modelName = modelResult[0].modelName
+      }
+    } else if (resolvedProviderId) {
+      const providerModels = await db
+        .select()
+        .from(agentModels)
+        .where(eq(agentModels.providerId, resolvedProviderId))
+      const found = providerModels.find((m) => m.isDefault) || providerModels[0]
+      if (found) {
+        modelName = found.modelName
+      }
+    }
+
+    // 调用 Orchestrator gRPC 测试接口
+    try {
+      const testResult = await orchestrator.testAgent({
+        roleId: role.id,
+        agentType: role.agentType,
+        providerId: resolvedProviderId,
+        providerConfig: Object.keys(providerConfig).length > 0 ? providerConfig : undefined,
+        modelName,
+        systemPrompt: role.systemPrompt,
+        testPrompt: prompt,
+      })
+
+      return {
+        success: testResult.success,
+        result: testResult.result,
+        error: testResult.error,
+        logs: testResult.logs,
+      }
+    } catch (error: any) {
+      request.log.error({ error, roleId: id }, 'Failed to test agent')
+      return reply.status(500).send({ 
+        error: error.message || 'Failed to test agent' 
+      })
+    }
   })
 }

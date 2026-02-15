@@ -1,7 +1,7 @@
 .PHONY: proto build run clean
 
 PROTO_DIR := ../../packages/shared/proto
-PROTO_OUT := ./internal/grpc
+PROTO_OUT := ./internal/grpc/pb
 
 # 生成 protobuf Go 代码
 proto:

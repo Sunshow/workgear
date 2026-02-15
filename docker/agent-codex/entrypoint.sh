@@ -14,23 +14,66 @@ exec 3>&1 1>&2
 WORKSPACE="/workspace"
 RESULT_FILE="/output/result.json"
 GIT_METADATA_FILE="/output/git_metadata.json"
+CODEX_CONFIG_DIR="/home/agent/.codex"
+CODEX_CONFIG_FILE="$CODEX_CONFIG_DIR/config.toml"
+CODEX_AUTH_FILE="$CODEX_CONFIG_DIR/auth.json"
 
 # Initialize git metadata as empty
 echo '{}' > "$GIT_METADATA_FILE"
 
-echo "[agent] Starting ClaudeCode agent..."
+echo "[agent] Starting Codex agent..."
 echo "[agent] Mode: ${AGENT_MODE:-execute}"
 echo "[agent] Git repo: ${GIT_REPO_URL:-none}"
 echo "[agent] Git branch: ${GIT_BRANCH:-main}"
+
+# ─── Step 0: Generate Codex config files ───
+echo "[agent] Generating Codex configuration..."
+
+# Generate auth.json
+cat > "$CODEX_AUTH_FILE" <<EOF
+{
+  "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+}
+EOF
+
+# Generate config.toml
+if [ -n "$CODEX_MODEL_PROVIDER" ] && [ "$CODEX_MODEL_PROVIDER" != "openai" ]; then
+    # Custom provider configuration
+    cat > "$CODEX_CONFIG_FILE" <<EOF
+model_provider = "${CODEX_MODEL_PROVIDER}"
+model = "${CODEX_MODEL:-gpt-5.3-codex}"
+model_reasoning_effort = "${CODEX_MODEL_REASONING_EFFORT:-high}"
+network_access = "${CODEX_NETWORK_ACCESS:-enabled}"
+disable_response_storage = ${CODEX_DISABLE_RESPONSE_STORAGE:-true}
+model_verbosity = "${CODEX_MODEL_VERBOSITY:-high}"
+
+[model_providers.${CODEX_MODEL_PROVIDER}]
+name = "${CODEX_MODEL_PROVIDER}"
+base_url = "${CODEX_PROVIDER_BASE_URL}"
+wire_api = "${CODEX_PROVIDER_WIRE_API:-responses}"
+requires_openai_auth = ${CODEX_PROVIDER_REQUIRES_AUTH:-true}
+EOF
+else
+    # Default OpenAI configuration
+    cat > "$CODEX_CONFIG_FILE" <<EOF
+model = "${CODEX_MODEL:-gpt-5.3-codex}"
+model_reasoning_effort = "${CODEX_MODEL_REASONING_EFFORT:-high}"
+network_access = "${CODEX_NETWORK_ACCESS:-enabled}"
+disable_response_storage = ${CODEX_DISABLE_RESPONSE_STORAGE:-true}
+model_verbosity = "${CODEX_MODEL_VERBOSITY:-high}"
+EOF
+fi
+
+echo "[agent] Configuration files created"
+
+# ─── Git identity (always configure) ───
+git config --global user.email "agent@workgear.dev"
+git config --global user.name "WorkGear Agent"
 
 # ─── Step 1: Clone repository (if configured) ───
 if [ -n "$GIT_REPO_URL" ]; then
     echo "[agent] Cloning repository..."
     BRANCH="${GIT_BRANCH:-main}"
-
-    # Configure git
-    git config --global user.email "agent@workgear.dev"
-    git config --global user.name "WorkGear Agent"
 
     # Clone
     git clone "$GIT_REPO_URL" --branch "$BRANCH" --single-branch --depth 50 "$WORKSPACE" 2>&1 || {
@@ -57,60 +100,63 @@ if [ "$AGENT_MODE" = "opsx_plan" ] || [ "$AGENT_MODE" = "opsx_apply" ]; then
     fi
 fi
 
-# ─── Step 2: Run Claude CLI ───
-echo "[agent] Running claude CLI..."
+# ─── Step 2: Run Codex CLI ───
+echo "[agent] Running Codex CLI..."
 
-# Test mode: use built-in short prompt, skip git operations
+# Build codex command
+CODEX_CMD="codex exec"
+CODEX_ARGS="--ephemeral"
+
+# Handle test mode
 if [ "$AGENT_MODE" = "test" ]; then
-    echo "[agent] Test mode enabled — using lightweight test prompt"
+    echo "[agent] Test mode: running simple validation..."
     if [ -z "$AGENT_PROMPT" ] || [ "$AGENT_PROMPT" = "" ]; then
-        AGENT_PROMPT='Echo "Claude agent test successful" and exit immediately'
+        AGENT_PROMPT="Echo 'Codex agent test successful' and exit immediately"
     fi
+    CODEX_ARGS="$CODEX_ARGS --sandbox read-only --skip-git-repo-check"
+    # Ensure workspace is a git repo (codex requires it)
+    if [ ! -d "$WORKSPACE/.git" ]; then
+        cd "$WORKSPACE"
+        git init
+        git commit --allow-empty -m "init"
+    fi
+else
+    # Sandbox mode based on AGENT_MODE
+    case "$AGENT_MODE" in
+        spec)
+            CODEX_ARGS="$CODEX_ARGS --sandbox read-only --skip-git-repo-check"
+            ;;
+        execute|opsx_plan|opsx_apply)
+            CODEX_ARGS="$CODEX_ARGS --sandbox workspace-write --full-auto"
+            ;;
+    esac
 fi
 
-# Build claude command
-CLAUDE_CMD="claude"
-CLAUDE_ARGS="-p --dangerously-skip-permissions"
-
-# Add model flag if specified
-if [ -n "$CLAUDE_MODEL" ]; then
-    CLAUDE_ARGS="$CLAUDE_ARGS --model $CLAUDE_MODEL"
+# Override sandbox if explicitly set
+if [ -n "$CODEX_SANDBOX" ]; then
+    CODEX_ARGS="$CODEX_ARGS --sandbox $CODEX_SANDBOX"
 fi
 
-# Add output format (stream-json for real-time log streaming)
-CLAUDE_ARGS="$CLAUDE_ARGS --output-format stream-json --verbose"
+# Execute codex, tee stderr to both file and console for visibility
+$CODEX_CMD $CODEX_ARGS "$AGENT_PROMPT" > "$RESULT_FILE" 2> >(tee /tmp/codex_stderr.log >&2)
 
-# Execute claude with stream-json output
-# Each line is a JSON event; we forward to stderr for Docker logs real-time reading
-# and extract the final "result" event for structured parsing
-$CLAUDE_CMD $CLAUDE_ARGS "$AGENT_PROMPT" 2>/tmp/claude_stderr.log | while IFS= read -r line; do
-    # Forward every line to stderr so Docker logs can stream it in real-time
-    echo "$line" >&2
-
-    # Parse JSON type field, save the last "result" event
-    TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
-    if [ "$TYPE" = "result" ]; then
-        echo "$line" > "$RESULT_FILE"
-    fi
-done
-
-# Check pipeline exit status
-PIPE_STATUS=${PIPESTATUS[0]}
-if [ "$PIPE_STATUS" != "0" ]; then
-    EXIT_CODE=$PIPE_STATUS
-    echo "[agent] Claude CLI exited with code $EXIT_CODE"
-    cat /tmp/claude_stderr.log 2>/dev/null
-    echo "{\"error\": \"claude exited with code $EXIT_CODE\", \"stderr\": \"$(cat /tmp/claude_stderr.log 2>/dev/null | head -c 2000 | sed 's/"/\\"/g')\"}" >&3
-    exit $EXIT_CODE
+# Check exit status
+CODEX_EXIT=$?
+if [ "$CODEX_EXIT" != "0" ]; then
+    echo "[agent] Codex CLI exited with code $CODEX_EXIT"
+    echo "[agent] Codex stderr:"
+    cat /tmp/codex_stderr.log 2>/dev/null
+    echo "{\"error\": \"codex exited with code $CODEX_EXIT\", \"stderr\": \"$(cat /tmp/codex_stderr.log 2>/dev/null | head -c 2000 | sed 's/"/\\"/g')\"}" >&3
+    exit $CODEX_EXIT
 fi
 
 # Verify we got a result
-if [ ! -f "$RESULT_FILE" ]; then
-    echo "[agent] Warning: No result event received from Claude CLI"
-    echo '{"error": "No result event", "summary": "Agent execution completed but no result was produced."}' > "$RESULT_FILE"
+if [ ! -f "$RESULT_FILE" ] || [ ! -s "$RESULT_FILE" ]; then
+    echo "[agent] Warning: No result file or empty result from Codex CLI"
+    echo '{"error": "No result", "summary": "Agent execution completed but no result was produced."}' > "$RESULT_FILE"
 fi
 
-echo "[agent] Claude CLI completed successfully."
+echo "[agent] Codex CLI completed successfully."
 
 # ─── Helper: Create GitHub PR ───
 create_github_pr() {
@@ -122,7 +168,6 @@ create_github_pr() {
     echo "[agent] Creating GitHub PR: $FEATURE_BRANCH -> $BASE_BRANCH"
 
     # Extract owner/repo from GIT_REPO_URL
-    # Support: https://github.com/owner/repo.git or https://token@github.com/owner/repo.git
     local REPO_PATH=$(echo "$GIT_REPO_URL" | sed -E 's|^https?://([^@]*@)?github\.com[/:]||' | sed 's|\.git$||')
     local OWNER=$(echo "$REPO_PATH" | cut -d'/' -f1)
     local REPO=$(echo "$REPO_PATH" | cut -d'/' -f2)
@@ -165,7 +210,6 @@ create_github_pr() {
         echo "$PR_NUMBER" > /output/pr_number.txt
     elif [ "$HTTP_CODE" = "422" ]; then
         echo "[agent] PR already exists (422), looking up existing PR..."
-        # Look up existing PR to extract pr_url and pr_number
         local SEARCH_URL="https://api.github.com/repos/$OWNER/$REPO/pulls?head=$OWNER:$FEATURE_BRANCH&base=$BASE_BRANCH&state=open"
         local SEARCH_RESP=$(curl -s "$SEARCH_URL" \
             -H "Authorization: Bearer $TOKEN" \
@@ -267,7 +311,6 @@ if [ "$SHOULD_PUSH" = "true" ] && [ -n "$GIT_REPO_URL" ]; then
         fi
 
         # Build changed_files_detail JSON array from git diff --name-status output
-        # Uses jq for safe JSON construction (handles special chars in file paths)
         DETAIL_JSON="[]"
         if [ -n "$CHANGED_FILES_DETAIL" ]; then
             DETAIL_JSON=$(echo "$CHANGED_FILES_DETAIL" | while IFS=$'\t' read -r status path rest; do

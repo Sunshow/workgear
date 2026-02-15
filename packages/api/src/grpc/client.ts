@@ -89,6 +89,34 @@ export function retryNode(nodeRunId: string): Promise<{ success: boolean; error?
   })
 }
 
+// ─── Agent Test ───
+
+export interface TestAgentParams {
+  roleId: string
+  agentType: string
+  providerId?: string
+  providerConfig?: Record<string, string>
+  modelName?: string
+  systemPrompt: string
+  testPrompt: string
+}
+
+export interface TestAgentResult {
+  success: boolean
+  result?: string
+  error?: string
+  logs: string[]
+}
+
+export function testAgent(params: TestAgentParams): Promise<TestAgentResult> {
+  return new Promise((resolve, reject) => {
+    client.TestAgent(params, { deadline: Date.now() + 120_000 }, (err: any, response: any) => {
+      if (err) return reject(err)
+      resolve(response)
+    })
+  })
+}
+
 // ─── Event Stream ───
 
 export interface ServerEvent {
