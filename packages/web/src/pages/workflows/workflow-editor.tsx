@@ -1,14 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { ArrowLeft, Save, Check, AlertTriangle, Play, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Save, Check, AlertTriangle, Play, RotateCcw, Settings } from 'lucide-react'
 import { parse, stringify } from 'yaml'
 import { api } from '@/lib/api'
-import type { Workflow, ValidateDslResponse } from '@/lib/types'
+import type { Workflow, ValidateDslResponse, WorkflowTemplate, TemplateParameter } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { YamlEditor } from './yaml-editor'
 import { DagPreview } from './dag-preview'
+import { TemplateParamsDialog } from './template-params-dialog'
 import type { DslNode, DslEdge } from './dsl-parser'
 import { parseDsl } from './dsl-parser'
 
@@ -25,6 +26,9 @@ export function WorkflowEditorPage() {
   const [parsedNodes, setParsedNodes] = useState<DslNode[]>([])
   const [parsedEdges, setParsedEdges] = useState<DslEdge[]>([])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [templateParameters, setTemplateParameters] = useState<TemplateParameter[]>([])
+  const [templateParams, setTemplateParams] = useState<Record<string, any>>({})
+  const [paramsDialogOpen, setParamsDialogOpen] = useState(false)
   const validateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -37,7 +41,18 @@ export function WorkflowEditorPage() {
       setWorkflow(data)
       setName(data.name)
       setDsl(data.dsl)
+      setTemplateParams(data.templateParams || {})
       handleParseDsl(data.dsl)
+
+      // Load template parameters if workflow has a template
+      if (data.templateId) {
+        try {
+          const template = await api.get(`workflow-templates/${data.templateId}`).json<WorkflowTemplate>()
+          setTemplateParameters(template.parameters)
+        } catch (error) {
+          console.error('Failed to load template:', error)
+        }
+      }
     } catch (error) {
       console.error('Failed to load workflow:', error)
     } finally {
@@ -71,7 +86,7 @@ export function WorkflowEditorPage() {
     setSaving(true)
     try {
       await api.put(`workflows/${workflowId}`, {
-        json: { name, dsl },
+        json: { name, dsl, templateParams },
       })
       setDirty(false)
     } catch (error) {
@@ -110,6 +125,11 @@ export function WorkflowEditorPage() {
     } catch {
       // ignore format errors
     }
+  }
+
+  function handleParamsSave(values: Record<string, any>) {
+    setTemplateParams(values)
+    setDirty(true)
   }
 
   if (loading) {
@@ -167,6 +187,12 @@ export function WorkflowEditorPage() {
               校验通过
             </Badge>
           )}
+          {templateParameters.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => setParamsDialogOpen(true)}>
+              <Settings className="mr-1 h-3 w-3" />
+              参数配置
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleValidate}>
             <Play className="mr-1 h-3 w-3" />
             校验
@@ -217,6 +243,15 @@ export function WorkflowEditorPage() {
           />
         </div>
       </div>
+
+      {/* Template Params Dialog */}
+      <TemplateParamsDialog
+        open={paramsDialogOpen}
+        onOpenChange={setParamsDialogOpen}
+        parameters={templateParameters}
+        values={templateParams}
+        onSave={handleParamsSave}
+      />
     </div>
   )
 }
