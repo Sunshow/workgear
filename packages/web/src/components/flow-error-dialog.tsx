@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Copy } from 'lucide-react'
+import { Copy, Check } from 'lucide-react'
 
 interface FlowErrorDialogProps {
   error: string
@@ -9,23 +11,32 @@ interface FlowErrorDialogProps {
 }
 
 export function FlowErrorDialog({ error, open, onOpenChange }: FlowErrorDialogProps) {
-  const handleCopy = () => {
-    navigator.clipboard.writeText(error)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(error)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* silent */ }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
+      <DialogContent className="max-w-5xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>流程执行错误详情</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <pre className="rounded bg-muted p-3 text-xs overflow-auto max-h-[60vh] whitespace-pre-wrap break-words">
-            {error}
-          </pre>
+          <Textarea
+            readOnly
+            value={error}
+            rows={20}
+            className="text-xs font-mono resize-none"
+          />
           <Button size="sm" variant="outline" onClick={handleCopy}>
-            <Copy className="mr-1 h-3 w-3" />
-            复制错误信息
+            {copied ? <Check className="mr-1 h-3 w-3" /> : <Copy className="mr-1 h-3 w-3" />}
+            {copied ? '已复制' : '复制错误信息'}
           </Button>
         </div>
       </DialogContent>
