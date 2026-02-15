@@ -16,12 +16,12 @@ export async function artifactRoutes(app: FastifyInstance) {
     }
 
     if (nodeRunId) {
-      return await db.select().from(artifacts).where(eq(artifacts.nodeRunId, nodeRunId)).orderBy(desc(artifacts.createdAt))
+      return await db.select().from(artifacts).where(eq(artifacts.nodeRunId, nodeRunId)).orderBy(artifacts.createdAt)
     }
     if (flowRunId) {
-      return await db.select().from(artifacts).where(eq(artifacts.flowRunId, flowRunId)).orderBy(desc(artifacts.createdAt))
+      return await db.select().from(artifacts).where(eq(artifacts.flowRunId, flowRunId)).orderBy(artifacts.createdAt)
     }
-    return await db.select().from(artifacts).where(eq(artifacts.taskId, taskId!)).orderBy(desc(artifacts.createdAt))
+    return await db.select().from(artifacts).where(eq(artifacts.taskId, taskId!)).orderBy(artifacts.createdAt)
   })
 
   // 获取单个产物

@@ -146,7 +146,7 @@ export async function flowRunRoutes(app: FastifyInstance) {
       .select()
       .from(artifacts)
       .where(eq(artifacts.flowRunId, id))
-      .orderBy(desc(artifacts.createdAt))
+      .orderBy(artifacts.createdAt)
 
     return result
   })
