@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
-import type { Artifact, FlowRun } from '@/lib/types'
+import type { Artifact, FlowRun, NodeRun } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { ArtifactPreviewCard } from '@/components/artifact-preview-card'
 import { ArtifactEditorDialog } from '@/components/artifact-editor-dialog'
@@ -29,6 +29,7 @@ const statusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'ou
 export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [flowRuns, setFlowRuns] = useState<FlowRun[]>([])
+  const [nodeRunsMap, setNodeRunsMap] = useState<Map<string, NodeRun[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null)
   // Artifact editor state
@@ -49,6 +50,19 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
       ])
       setArtifacts(artifactsData)
       setFlowRuns(flowRunsData)
+
+      // Load node runs for flow runs that have artifacts
+      const flowIdsWithArtifacts = new Set(
+        artifactsData.map((a) => a.flowRunId).filter((id): id is string => id !== null)
+      )
+      const nodeRunEntries = await Promise.all(
+        [...flowIdsWithArtifacts].map(async (flowRunId) => {
+          const nodes = await api.get(`flow-runs/${flowRunId}/nodes`).json<NodeRun[]>()
+          return [flowRunId, nodes] as const
+        })
+      )
+      setNodeRunsMap(new Map(nodeRunEntries))
+
       // Auto-expand the latest flow if it has artifacts
       if (flowRunsData.length > 0) {
         const latestFlowId = flowRunsData[0].id
@@ -93,11 +107,11 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
     artifactsByFlow.get(key)!.push(artifact)
   }
 
-  // Separate legacy artifacts (no flowRunId)
-  const legacyArtifacts = artifactsByFlow.get(null) || []
+  // Separate unlinked artifacts (no flowRunId)
+  const unlinkedArtifacts = artifactsByFlow.get(null) || []
   artifactsByFlow.delete(null)
 
-  // Sort flow runs by creation time (newest first)
+  // Flow runs that have artifacts, newest first
   const sortedFlowRuns = flowRuns.filter((fr) => artifactsByFlow.has(fr.id))
 
   return (
@@ -106,6 +120,7 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
       {sortedFlowRuns.map((flowRun) => {
         const flowArtifacts = artifactsByFlow.get(flowRun.id) || []
         const isExpanded = expandedFlowId === flowRun.id
+        const nodeRuns = nodeRunsMap.get(flowRun.id) || []
 
         return (
           <div key={flowRun.id} className="rounded-md border">
@@ -131,28 +146,26 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
             </button>
 
             {isExpanded && (
-              <div className="border-t px-3 py-2 space-y-1">
-                {flowArtifacts.map((artifact) => (
-                  <ArtifactPreviewCard
-                    key={artifact.id}
-                    artifact={artifact}
-                    onEdit={handleEditArtifact}
-                  />
-                ))}
+              <div className="border-t px-3 py-2 space-y-2">
+                <FlowArtifactsByNode
+                  artifacts={flowArtifacts}
+                  nodeRuns={nodeRuns}
+                  onEdit={handleEditArtifact}
+                />
               </div>
             )}
           </div>
         )
       })}
 
-      {/* Legacy artifacts (no flow association) */}
-      {legacyArtifacts.length > 0 && (
+      {/* Unlinked artifacts */}
+      {unlinkedArtifacts.length > 0 && (
         <div className="rounded-md border">
           <div className="p-3 border-b bg-muted/30">
-            <span className="text-sm font-medium text-muted-foreground">历史产物（未关联流程）</span>
+            <span className="text-sm font-medium text-muted-foreground">其他产物</span>
           </div>
           <div className="px-3 py-2 space-y-1">
-            {legacyArtifacts.map((artifact) => (
+            {unlinkedArtifacts.map((artifact) => (
               <ArtifactPreviewCard
                 key={artifact.id}
                 artifact={artifact}
@@ -172,6 +185,91 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
         onOpenChange={(open) => { if (!open) setEditingArtifact(null) }}
         onSaved={loadArtifacts}
       />
+    </div>
+  )
+}
+
+// ─── Sub-component: group artifacts by node within a flow run ───
+
+function FlowArtifactsByNode({
+  artifacts,
+  nodeRuns,
+  onEdit,
+}: {
+  artifacts: Artifact[]
+  nodeRuns: NodeRun[]
+  onEdit: (artifact: Artifact, content: string, version: number) => void
+}) {
+  // Build nodeRun lookup by id
+  const nodeRunById = new Map(nodeRuns.map((nr) => [nr.id, nr]))
+
+  // Group artifacts by nodeRunId
+  const byNode = new Map<string | null, Artifact[]>()
+  for (const artifact of artifacts) {
+    const key = artifact.nodeRunId
+    if (!byNode.has(key)) {
+      byNode.set(key, [])
+    }
+    byNode.get(key)!.push(artifact)
+  }
+
+  // Artifacts without nodeRunId
+  const noNodeArtifacts = byNode.get(null) || []
+  byNode.delete(null)
+
+  // Sort node groups by node execution order (createdAt)
+  const sortedNodeIds = [...byNode.keys()].sort((a, b) => {
+    const nrA = nodeRunById.get(a!)
+    const nrB = nodeRunById.get(b!)
+    if (!nrA || !nrB) return 0
+    return new Date(nrA.createdAt).getTime() - new Date(nrB.createdAt).getTime()
+  })
+
+  return (
+    <div className="space-y-2">
+      {sortedNodeIds.map((nodeRunId) => {
+        const nodeArtifacts = byNode.get(nodeRunId)!
+        const nodeRun = nodeRunById.get(nodeRunId!)
+        const nodeName = nodeRun?.nodeName || nodeRun?.nodeId || '未知节点'
+        const nodeType = nodeRun?.nodeType
+
+        return (
+          <div key={nodeRunId} className="space-y-1">
+            <div className="flex items-center gap-1.5 py-1">
+              <span className="text-xs font-medium">{nodeName}</span>
+              {nodeType && (
+                <span className="text-[10px] text-muted-foreground">({nodeType})</span>
+              )}
+            </div>
+            <div className="pl-2 space-y-1">
+              {nodeArtifacts.map((artifact) => (
+                <ArtifactPreviewCard
+                  key={artifact.id}
+                  artifact={artifact}
+                  onEdit={onEdit}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {noNodeArtifacts.length > 0 && (
+        <div className="space-y-1">
+          <div className="py-1">
+            <span className="text-xs font-medium text-muted-foreground">其他产物</span>
+          </div>
+          <div className="pl-2 space-y-1">
+            {noNodeArtifacts.map((artifact) => (
+              <ArtifactPreviewCard
+                key={artifact.id}
+                artifact={artifact}
+                onEdit={onEdit}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
