@@ -179,6 +179,8 @@ export interface NodeRun {
 export interface Artifact {
   id: string
   taskId: string
+  flowRunId: string | null
+  nodeRunId: string | null
   type: string
   title: string
   filePath: string | null

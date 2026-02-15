@@ -501,7 +501,7 @@ func (e *FlowExecutor) handleArtifact(ctx context.Context, flowRun *db.FlowRun, 
 	}
 
 	// Create artifact
-	artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, artifactCfg.Type, title, "")
+	artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, artifactCfg.Type, title, "", flowRun.ID, nodeRun.ID)
 	if err != nil {
 		return fmt.Errorf("create artifact: %w", err)
 	}
@@ -701,7 +701,7 @@ func (e *FlowExecutor) handleArtifactFiles(ctx context.Context, flowRun *db.Flow
 		}
 
 		// Create artifact
-		artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, file.Type, file.Title, file.Path)
+		artifactID, err := e.db.CreateArtifact(ctx, flowRun.TaskID, file.Type, file.Title, file.Path, flowRun.ID, nodeRun.ID)
 		if err != nil {
 			e.logger.Errorw("Failed to create artifact", "error", err, "path", file.Path)
 			continue

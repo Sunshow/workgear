@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { eq, desc, and, isNull } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { flowRuns, nodeRuns, tasks, workflows, timelineEvents, projects } from '../db/schema.js'
+import { flowRuns, nodeRuns, tasks, workflows, timelineEvents, projects, artifacts } from '../db/schema.js'
 import { parse } from 'yaml'
 import * as orchestrator from '../grpc/client.js'
 import { authenticate } from '../middleware/auth.js'
@@ -129,6 +129,24 @@ export async function flowRunRoutes(app: FastifyInstance) {
       .from(nodeRuns)
       .where(eq(nodeRuns.flowRunId, id))
       .orderBy(nodeRuns.createdAt)
+
+    return result
+  })
+
+  // 获取 FlowRun 的所有产物
+  app.get<{ Params: { id: string } }>('/:id/artifacts', async (request, reply) => {
+    const { id } = request.params
+
+    const [flowRun] = await db.select().from(flowRuns).where(eq(flowRuns.id, id))
+    if (!flowRun) {
+      return reply.status(404).send({ error: 'FlowRun not found' })
+    }
+
+    const result = await db
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.flowRunId, id))
+      .orderBy(desc(artifacts.createdAt))
 
     return result
   })

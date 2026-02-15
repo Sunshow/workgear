@@ -201,11 +201,16 @@ export const nodeRunHistory = pgTable('node_run_history', {
 export const artifacts = pgTable('artifacts', {
   id: uuid('id').primaryKey().defaultRandom(),
   taskId: uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  flowRunId: uuid('flow_run_id').references(() => flowRuns.id, { onDelete: 'set null' }),
+  nodeRunId: uuid('node_run_id').references(() => nodeRuns.id, { onDelete: 'set null' }),
   type: varchar('type', { length: 50 }).notNull(),
   title: varchar('title', { length: 500 }).notNull(),
   filePath: text('file_path'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index('idx_artifacts_flow_run').on(table.flowRunId),
+  index('idx_artifacts_node_run').on(table.nodeRunId),
+])
 
 // ============================================================
 // 产物版本表

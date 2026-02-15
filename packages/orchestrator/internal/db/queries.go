@@ -551,13 +551,21 @@ func (c *Client) CreateTimelineEvent(ctx context.Context, evt *TimelineEvent) er
 // ─── Artifact Queries ───
 
 // CreateArtifact creates a new artifact record
-func (c *Client) CreateArtifact(ctx context.Context, taskID, artifactType, title, filePath string) (string, error) {
+func (c *Client) CreateArtifact(ctx context.Context, taskID, artifactType, title, filePath, flowRunID, nodeRunID string) (string, error) {
 	var id string
+	// Use NULL for empty optional foreign keys
+	var flowRunIDParam, nodeRunIDParam any
+	if flowRunID != "" {
+		flowRunIDParam = flowRunID
+	}
+	if nodeRunID != "" {
+		nodeRunIDParam = nodeRunID
+	}
 	err := c.pool.QueryRow(ctx, `
-		INSERT INTO artifacts (id, task_id, type, title, file_path, created_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW())
+		INSERT INTO artifacts (id, task_id, flow_run_id, node_run_id, type, title, file_path, created_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NOW())
 		RETURNING id
-	`, taskID, artifactType, title, filePath).Scan(&id)
+	`, taskID, flowRunIDParam, nodeRunIDParam, artifactType, title, filePath).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("create artifact: %w", err)
 	}

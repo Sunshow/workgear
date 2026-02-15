@@ -1,35 +1,40 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
-import type { Artifact, ArtifactVersion } from '@/lib/types'
+import type { Artifact, FlowRun } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
-import { MarkdownRenderer } from '@/components/markdown-renderer'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { ArtifactPreviewCard } from '@/components/artifact-preview-card'
+import { ArtifactEditorDialog } from '@/components/artifact-editor-dialog'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 interface ArtifactsTabProps {
   taskId: string
 }
 
-const typeLabels: Record<string, string> = {
-  requirement: '需求',
-  prd: 'PRD',
-  user_story: 'User Story',
-  code: '代码',
-  proposal: 'Proposal',
-  design: 'Design',
-  tasks: 'Tasks',
-  spec: 'Spec',
+const statusLabels: Record<string, string> = {
+  pending: '待执行',
+  running: '执行中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+}
+
+const statusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  pending: 'outline',
+  running: 'default',
+  completed: 'secondary',
+  failed: 'destructive',
+  cancelled: 'outline',
 }
 
 export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
+  const [flowRuns, setFlowRuns] = useState<FlowRun[]>([])
   const [loading, setLoading] = useState(true)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [versions, setVersions] = useState<ArtifactVersion[]>([])
-  const [versionsLoading, setVersionsLoading] = useState(false)
-  const [viewingVersionId, setViewingVersionId] = useState<string | null>(null)
-  const [versionContent, setVersionContent] = useState<string>('')
-  const [contentLoading, setContentLoading] = useState(false)
-  const [contentError, setContentError] = useState<string | null>(null)
+  const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null)
+  // Artifact editor state
+  const [editingArtifact, setEditingArtifact] = useState<Artifact | null>(null)
+  const [editingContent, setEditingContent] = useState('')
+  const [editingVersion, setEditingVersion] = useState(0)
 
   useEffect(() => {
     loadArtifacts()
@@ -38,8 +43,20 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
   async function loadArtifacts() {
     setLoading(true)
     try {
-      const data = await api.get(`artifacts?taskId=${taskId}`).json<Artifact[]>()
-      setArtifacts(data)
+      const [artifactsData, flowRunsData] = await Promise.all([
+        api.get(`artifacts?taskId=${taskId}`).json<Artifact[]>(),
+        api.get(`flow-runs?taskId=${taskId}`).json<FlowRun[]>(),
+      ])
+      setArtifacts(artifactsData)
+      setFlowRuns(flowRunsData)
+      // Auto-expand the latest flow if it has artifacts
+      if (flowRunsData.length > 0) {
+        const latestFlowId = flowRunsData[0].id
+        const hasArtifacts = artifactsData.some((a) => a.flowRunId === latestFlowId)
+        if (hasArtifacts) {
+          setExpandedFlowId(latestFlowId)
+        }
+      }
     } catch (error) {
       console.error('Failed to load artifacts:', error)
     } finally {
@@ -47,59 +64,10 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
     }
   }
 
-  async function toggleExpand(artifactId: string) {
-    if (expandedId === artifactId) {
-      setExpandedId(null)
-      setVersions([])
-      setViewingVersionId(null)
-      setVersionContent('')
-      setContentError(null)
-      return
-    }
-
-    setExpandedId(artifactId)
-    setViewingVersionId(null)
-    setVersionContent('')
-    setContentError(null)
-    setVersionsLoading(true)
-    try {
-      const data = await api
-        .get(`artifacts/${artifactId}/versions`)
-        .json<ArtifactVersion[]>()
-      setVersions(data)
-    } catch (error) {
-      console.error('Failed to load versions:', error)
-    } finally {
-      setVersionsLoading(false)
-    }
-  }
-
-  async function fetchVersionContent(artifactId: string, versionId: string) {
-    setContentLoading(true)
-    setContentError(null)
-    try {
-      const data = await api
-        .get(`artifacts/${artifactId}/versions/${versionId}/content`)
-        .json<{ content: string }>()
-      setVersionContent(data.content)
-    } catch {
-      setContentError('内容加载失败')
-      setVersionContent('')
-    } finally {
-      setContentLoading(false)
-    }
-  }
-
-  async function loadVersionContent(artifactId: string, versionId: string) {
-    if (viewingVersionId === versionId) {
-      setViewingVersionId(null)
-      setVersionContent('')
-      setContentError(null)
-      return
-    }
-
-    setViewingVersionId(versionId)
-    await fetchVersionContent(artifactId, versionId)
+  function handleEditArtifact(artifact: Artifact, content: string, version: number) {
+    setEditingArtifact(artifact)
+    setEditingContent(content)
+    setEditingVersion(version)
   }
 
   if (loading) {
@@ -115,109 +83,95 @@ export function ArtifactsTab({ taskId }: ArtifactsTabProps) {
     )
   }
 
+  // Group artifacts by flow_run_id
+  const artifactsByFlow = new Map<string | null, Artifact[]>()
+  for (const artifact of artifacts) {
+    const key = artifact.flowRunId
+    if (!artifactsByFlow.has(key)) {
+      artifactsByFlow.set(key, [])
+    }
+    artifactsByFlow.get(key)!.push(artifact)
+  }
+
+  // Separate legacy artifacts (no flowRunId)
+  const legacyArtifacts = artifactsByFlow.get(null) || []
+  artifactsByFlow.delete(null)
+
+  // Sort flow runs by creation time (newest first)
+  const sortedFlowRuns = flowRuns.filter((fr) => artifactsByFlow.has(fr.id))
+
   return (
-    <div className="space-y-2">
-      {artifacts.map((artifact) => (
-        <div key={artifact.id} className="rounded-md border">
-          <button
-            className="flex w-full items-center gap-2 p-3 text-left hover:bg-muted/50"
-            onClick={() => toggleExpand(artifact.id)}
-          >
-            {expandedId === artifact.id ? (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            )}
-            <Badge variant="outline" className="text-xs">
-              {typeLabels[artifact.type] || artifact.type}
-            </Badge>
-            <span className="flex-1 text-sm">{artifact.title}</span>
-            {artifact.filePath && (
-              <span className="text-xs text-muted-foreground truncate max-w-[150px]" title={artifact.filePath}>
-                {artifact.filePath.split('/').pop()}
-              </span>
-            )}
-            <span className="text-xs text-muted-foreground">
-              {new Date(artifact.createdAt).toLocaleDateString('zh-CN')}
-            </span>
-          </button>
+    <div className="space-y-3">
+      {/* Flow-grouped artifacts */}
+      {sortedFlowRuns.map((flowRun) => {
+        const flowArtifacts = artifactsByFlow.get(flowRun.id) || []
+        const isExpanded = expandedFlowId === flowRun.id
 
-          {expandedId === artifact.id && (
-            <div className="border-t px-3 py-2">
-              {versionsLoading ? (
-                <p className="text-xs text-muted-foreground">加载版本历史...</p>
-              ) : versions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">暂无版本记录</p>
+        return (
+          <div key={flowRun.id} className="rounded-md border">
+            <button
+              className="flex w-full items-center gap-2 p-3 text-left hover:bg-muted/50"
+              onClick={() => setExpandedFlowId(isExpanded ? null : flowRun.id)}
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
               ) : (
-                <div className="space-y-2">
-                  {versions.map((version) => (
-                    <div key={version.id}>
-                      <div className="rounded bg-muted/30 p-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium">v{version.version}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              {version.createdBy || '系统'} ·{' '}
-                              {new Date(version.createdAt).toLocaleString('zh-CN')}
-                            </span>
-                            <button
-                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                              onClick={() => loadVersionContent(artifact.id, version.id)}
-                              title={viewingVersionId === version.id ? '收起' : '查看内容'}
-                            >
-                              {viewingVersionId === version.id ? (
-                                <>
-                                  <EyeOff className="h-3 w-3" />
-                                  收起
-                                </>
-                              ) : (
-                                <>
-                                  <Eye className="h-3 w-3" />
-                                  查看
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                        {version.changeSummary && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {version.changeSummary}
-                          </p>
-                        )}
-                      </div>
-
-                      {viewingVersionId === version.id && (
-                        <div className="mt-1 rounded border bg-background p-3 max-h-[400px] overflow-y-auto">
-                          {contentLoading ? (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              加载内容...
-                            </div>
-                          ) : contentError ? (
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs text-destructive">{contentError}</p>
-                              <button
-                                className="text-xs text-primary hover:underline"
-                                onClick={() => fetchVersionContent(artifact.id, version.id)}
-                              >
-                                重试
-                              </button>
-                            </div>
-                          ) : versionContent ? (
-                            <MarkdownRenderer content={versionContent} />
-                          ) : (
-                            <p className="text-xs text-muted-foreground">该版本暂无内容</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               )}
-            </div>
-          )}
+              <span className="text-sm font-medium">流程执行</span>
+              <Badge variant={statusColors[flowRun.status] || 'outline'} className="text-xs">
+                {statusLabels[flowRun.status] || flowRun.status}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {new Date(flowRun.createdAt).toLocaleString('zh-CN')}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {flowArtifacts.length} 个产物
+              </span>
+            </button>
+
+            {isExpanded && (
+              <div className="border-t px-3 py-2 space-y-1">
+                {flowArtifacts.map((artifact) => (
+                  <ArtifactPreviewCard
+                    key={artifact.id}
+                    artifact={artifact}
+                    onEdit={handleEditArtifact}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Legacy artifacts (no flow association) */}
+      {legacyArtifacts.length > 0 && (
+        <div className="rounded-md border">
+          <div className="p-3 border-b bg-muted/30">
+            <span className="text-sm font-medium text-muted-foreground">历史产物（未关联流程）</span>
+          </div>
+          <div className="px-3 py-2 space-y-1">
+            {legacyArtifacts.map((artifact) => (
+              <ArtifactPreviewCard
+                key={artifact.id}
+                artifact={artifact}
+                onEdit={handleEditArtifact}
+              />
+            ))}
+          </div>
         </div>
-      ))}
+      )}
+
+      {/* Artifact editor dialog */}
+      <ArtifactEditorDialog
+        artifact={editingArtifact}
+        initialContent={editingContent}
+        currentVersion={editingVersion}
+        open={!!editingArtifact}
+        onOpenChange={(open) => { if (!open) setEditingArtifact(null) }}
+        onSaved={loadArtifacts}
+      />
     </div>
   )
 }
