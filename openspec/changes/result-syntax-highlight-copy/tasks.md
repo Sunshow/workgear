@@ -4,46 +4,46 @@
 
 ### 创建 CodeBlock 组件
 
-- [ ] 新建 `code-block.tsx` 文件 **[S]**
-- [ ] 实现 `<CodeBlock>` 组件，接收 `code`、`language`、`maxHeight`、`className` props **[M]**
-- [ ] 集成 highlight.js core + 按需注册 JSON 语言包 **[S]**
-- [ ] 实现 `useEffect` 中调用 `hljs.highlightElement` 进行语法高亮 **[S]**
-- [ ] 实现复制按钮（Copy / Check 图标切换，2s 自动恢复） **[S]**
-- [ ] 使用 `navigator.clipboard.writeText` 实现剪贴板写入 **[S]**
-- [ ] 复制失败时静默处理（try/catch 不弹错误） **[S]**
-- [ ] 验证 dark mode 下高亮样式和按钮颜色正确 **[S]**
+- [x] 新建 `code-block.tsx` 文件 **[S]**
+- [x] 实现 `<CodeBlock>` 组件，接收 `code`、`language`、`maxHeight`、`className` props **[M]**
+- [x] 集成 highlight.js core + 按需注册 JSON 语言包 **[S]**
+- [x] 实现 `useEffect` 中调用 `hljs.highlightElement` 进行语法高亮 **[S]**
+- [x] 实现复制按钮（Copy / Check 图标切换，2s 自动恢复） **[S]**
+- [x] 使用 `navigator.clipboard.writeText` 实现剪贴板写入 **[S]**
+- [x] 复制失败时静默处理（try/catch 不弹错误） **[S]**
+- [x] 验证 dark mode 下高亮样式和按钮颜色正确 **[S]**
 
 ## 模块：MarkdownRenderer (packages/web/src/components)
 
 ### 为 Markdown 代码块注入复制按钮
 
-- [ ] 在 `markdown-renderer.tsx` 中新增 `PreWithCopy` 内部组件 **[S]**
-- [ ] 实现 `getTextContent` 递归提取 React children 的纯文本 **[S]**
-- [ ] 在 `ReactMarkdown` 的 `components` prop 中注册 `pre: PreWithCopy` **[S]**
-- [ ] 验证 rehype-highlight 的语法高亮不受影响 **[S]**
-- [ ] 验证行内代码（`code`）不显示复制按钮 **[S]**
-- [ ] 验证 Spec Artifact Viewer 中代码块的复制功能 **[S]**
-- [ ] 验证 ArtifactPreviewCard 中代码块的复制功能 **[S]**
+- [x] 在 `markdown-renderer.tsx` 中新增 `PreWithCopy` 内部组件 **[S]**
+- [x] 实现 `getTextContent` 递归提取 React children 的纯文本 **[S]**
+- [x] 在 `ReactMarkdown` 的 `components` prop 中注册 `pre: PreWithCopy` **[S]**
+- [x] 验证 rehype-highlight 的语法高亮不受影响 **[S]**
+- [x] 验证行内代码（`code`）不显示复制按钮 **[S]**
+- [x] 验证 Spec Artifact Viewer 中代码块的复制功能 **[S]**
+- [x] 验证 ArtifactPreviewCard 中代码块的复制功能 **[S]**
 
 ## 模块：Flow Tab (packages/web/src/pages/kanban/task-detail)
 
 ### 节点执行结果使用 CodeBlock
 
-- [ ] 在 `flow-tab.tsx` 中导入 `<CodeBlock>` 组件 **[S]**
-- [ ] 将节点执行结果的 `<pre>` 替换为 `<CodeBlock code={...} language="json">` **[S]**
-- [ ] 将待审核内容的 `<pre>` 替换为 `<CodeBlock code={...} language="json">` **[S]**
-- [ ] 验证展开节点后 JSON 有语法高亮 **[S]**
-- [ ] 验证复制按钮可正常复制 JSON 内容 **[S]**
+- [x] 在 `flow-tab.tsx` 中导入 `<CodeBlock>` 组件 **[S]**
+- [x] 将节点执行结果的 `<pre>` 替换为 `<CodeBlock code={...} language="json">` **[S]**
+- [x] 将待审核内容的 `<pre>` 替换为 `<CodeBlock code={...} language="json">` **[S]**
+- [x] 验证展开节点后 JSON 有语法高亮 **[S]**
+- [x] 验证复制按钮可正常复制 JSON 内容 **[S]**
 
 ## 模块：Node Log Dialog (packages/web/src/components)
 
 ### 工具日志使用 CodeBlock
 
-- [ ] 在 `node-log-dialog.tsx` 中导入 `<CodeBlock>` 组件 **[S]**
-- [ ] 将 `tool_use` 事件的 `tool_input` `<pre>` 替换为 `<CodeBlock language="json">` **[S]**
-- [ ] 为 `tool_result` 事件的 content 区域添加复制按钮（使用 CodeBlock，不指定 language） **[S]**
-- [ ] 将 `default` 事件的 fallback `<pre>` 替换为 `<CodeBlock language="json">` **[S]**
-- [ ] 验证日志对话框中各类事件的高亮和复制功能 **[S]**
+- [x] 在 `node-log-dialog.tsx` 中导入 `<CodeBlock>` 组件 **[S]**
+- [x] 将 `tool_use` 事件的 `tool_input` `<pre>` 替换为 `<CodeBlock language="json">` **[S]**
+- [x] 为 `tool_result` 事件的 content 区域添加复制按钮（使用 CodeBlock，不指定 language） **[S]**
+- [x] 将 `default` 事件的 fallback `<pre>` 替换为 `<CodeBlock language="json">` **[S]**
+- [x] 验证日志对话框中各类事件的高亮和复制功能 **[S]**
 
 ## 测试验证
 

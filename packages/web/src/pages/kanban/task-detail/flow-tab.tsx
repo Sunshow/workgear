@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { useFlowRunEvents } from '@/hooks/use-websocket'
 import { XCircle, CheckCircle, RotateCcw, Clock, Play, AlertCircle, Pencil, Loader2, FileText } from 'lucide-react'
 import { NodeLogDialog } from '@/components/node-log-dialog'
+import { CodeBlock } from '@/components/code-block'
 import { ArtifactPreviewCard } from '@/components/artifact-preview-card'
 import { ArtifactEditorDialog } from '@/components/artifact-editor-dialog'
 
@@ -319,9 +320,11 @@ function NodeRunItem({ nodeRun, onActionComplete, onViewLogs, artifactRefreshKey
           {nodeRun.output && (
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">执行结果</p>
-              <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-48">
-                {JSON.stringify(filterInternalFields(nodeRun.output), null, 2)}
-              </pre>
+              <CodeBlock
+                code={JSON.stringify(filterInternalFields(nodeRun.output), null, 2)}
+                language="json"
+                maxHeight="12rem"
+              />
             </div>
           )}
 
@@ -345,9 +348,11 @@ function NodeRunItem({ nodeRun, onActionComplete, onViewLogs, artifactRefreshKey
           {nodeRun.status === 'waiting_human' && nodeRun.input && (
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">待审核内容</p>
-              <pre className="rounded bg-muted p-2 text-xs overflow-auto max-h-48">
-                {JSON.stringify(nodeRun.input, null, 2)}
-              </pre>
+              <CodeBlock
+                code={JSON.stringify(nodeRun.input, null, 2)}
+                language="json"
+                maxHeight="12rem"
+              />
             </div>
           )}
 
