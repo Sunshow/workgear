@@ -1,6 +1,6 @@
 {
   "name": "workgear",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
   "description": "AI Agent 工作流编排平台",
   "scripts": {
