@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import type { Artifact, FlowRun, NodeRun } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ArtifactPreviewCard } from '@/components/artifact-preview-card'
 import { ArtifactEditorDialog } from '@/components/artifact-editor-dialog'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, AlertCircle, RefreshCw } from 'lucide-react'
 
 interface ArtifactsTabProps {
   taskId: string
@@ -32,6 +34,7 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
   const [flowRuns, setFlowRuns] = useState<FlowRun[]>([])
   const [nodeRunsMap, setNodeRunsMap] = useState<Map<string, NodeRun[]>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null)
   // Artifact editor state
   const [editingArtifact, setEditingArtifact] = useState<Artifact | null>(null)
@@ -44,6 +47,7 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
 
   async function loadArtifacts() {
     setLoading(true)
+    setError(null)
     try {
       const [artifactsData, flowRunsData] = await Promise.all([
         api.get(`artifacts?taskId=${taskId}`).json<Artifact[]>(),
@@ -72,8 +76,9 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
           setExpandedFlowId(latestFlowId)
         }
       }
-    } catch (error) {
-      console.error('Failed to load artifacts:', error)
+    } catch (err) {
+      console.error('Failed to load artifacts:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load artifacts')
     } finally {
       setLoading(false)
     }
@@ -85,15 +90,40 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
     setEditingVersion(version)
   }
 
+  // Loading state with skeleton
   if (loading) {
-    return <p className="py-4 text-center text-sm text-muted-foreground">加载中...</p>
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+    )
   }
 
+  // Error state with retry
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <div className="text-center space-y-2">
+          <p className="text-sm font-medium">Failed to load artifacts</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
+        </div>
+        <Button onClick={loadArtifacts} variant="outline" size="sm">
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  // Empty state
   if (artifacts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <p className="text-sm text-muted-foreground">暂无产物</p>
-        <p className="mt-1 text-xs text-muted-foreground">流程执行后，产物将在此显示</p>
+        <p className="text-sm font-medium text-muted-foreground">No artifacts to review</p>
+        <p className="mt-1 text-xs text-muted-foreground">Artifacts will appear here when upstream nodes produce them</p>
       </div>
     )
   }

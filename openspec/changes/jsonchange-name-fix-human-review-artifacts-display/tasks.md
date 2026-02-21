@@ -4,13 +4,13 @@
 
 ### packages/api/src/routes/artifacts.ts
 
-- [ ] 读取现有 artifacts.ts 路由文件，理解当前实现
-- [ ] 扩展 GET /api/artifacts 接口，添加 types 查询参数支持
-  - [ ] 解析 types 参数（逗号分隔字符串）
-  - [ ] 使用 Drizzle ORM 的 inArray 操作符过滤类型
-- [ ] 确保查询返回字段包含 content 和 createdBy
-- [ ] 修改错误处理逻辑：taskId 不存在时返回空数组而非 404
-- [ ] 添加 includeVersions 查询参数支持（可选功能）
+- [x] 读取现有 artifacts.ts 路由文件，理解当前实现
+- [x] 扩展 GET /api/artifacts 接口，添加 types 查询参数支持
+  - [x] 解析 types 参数（逗号分隔字符串）
+  - [x] 使用 Drizzle ORM 的 inArray 操作符过滤类型
+- [x] 确保查询返回字段包含 content 和 createdBy
+- [x] 修改错误处理逻辑：taskId 不存在时返回空数组而非 404
+- [x] 添加 includeVersions 查询参数支持（可选功能）
 - [ ] 编写单元测试验证 types 过滤逻辑
 - [ ] 编写集成测试验证完整查询流程
 
@@ -20,33 +20,33 @@
 
 ### packages/web/src/components/kanban/TaskDetail/ArtifactsTab.tsx
 
-- [ ] 读取现有 ArtifactsTab.tsx 组件，理解当前实现
-- [ ] 添加状态管理：loading, error, typeFilter
-- [ ] 实现 useEffect 钩子，在组件挂载时获取产物数据
-- [ ] 实现加载状态 UI（Skeleton 骨架屏）
-  - [ ] 使用 Shadcn/ui Skeleton 组件
-  - [ ] 显示 3-5 个占位符卡片
-- [ ] 实现空状态 UI
-  - [ ] 显示"No artifacts to review"消息
-  - [ ] 添加辅助文本说明
-- [ ] 实现错误状态 UI
-  - [ ] 显示错误消息
-  - [ ] 添加重试按钮
+- [x] 读取现有 ArtifactsTab.tsx 组件，理解当前实现
+- [x] 添加状态管理：loading, error, typeFilter
+- [x] 实现 useEffect 钩子，在组件挂载时获取产物数据
+- [x] 实现加载状态 UI（Skeleton 骨架屏）
+  - [x] 使用 Shadcn/ui Skeleton 组件
+  - [x] 显示 3-5 个占位符卡片
+- [x] 实现空状态 UI
+  - [x] 显示"No artifacts to review"消息
+  - [x] 添加辅助文本说明
+- [x] 实现错误状态 UI
+  - [x] 显示错误消息
+  - [x] 添加重试按钮
 - [ ] 实现类型过滤器（可选功能）
   - [ ] 添加类型选择下拉菜单
   - [ ] 更新 API 请求参数
-- [ ] 优化移动端响应式布局
-  - [ ] 使用 Tailwind CSS 响应式类
-  - [ ] 确保触摸目标 ≥ 44px
+- [x] 优化移动端响应式布局
+  - [x] 使用 Tailwind CSS 响应式类
+  - [x] 确保触摸目标 ≥ 44px
 - [ ] 编写组件单元测试
 
 ### packages/web/src/components/kanban/TaskDetail/SpecArtifactViewer.tsx
 
-- [ ] 读取现有 SpecArtifactViewer.tsx 组件，理解当前实现
-- [ ] 确保支持所有产物类型渲染
-  - [ ] code 类型：使用 Monaco Editor
-  - [ ] prd/spec 类型：使用 Markdown 渲染器
-  - [ ] 其他类型：降级为纯文本
+- [x] 读取现有 SpecArtifactViewer.tsx 组件，理解当前实现
+- [x] 确保支持所有产物类型渲染
+  - [x] code 类型：使用 Monaco Editor
+  - [x] prd/spec 类型：使用 Markdown 渲染器
+  - [x] 其他类型：降级为纯文本
 - [ ] 添加"Version History"功能
   - [ ] 添加按钮触发版本历史查询
   - [ ] 实现版本列表 UI
@@ -55,8 +55,8 @@
   - [ ] 添加按钮触发关系查询
   - [ ] 实现关系图或列表 UI
   - [ ] 支持导航到关联产物
-- [ ] 优化移动端全屏对话框体验
-  - [ ] 使用 Shadcn/ui Dialog 的 fullscreen 模式
+- [x] 优化移动端全屏对话框体验
+  - [x] 使用 Shadcn/ui Dialog 的 fullscreen 模式
 - [ ] 编写组件单元测试
 
 ---
