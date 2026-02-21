@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { FileText, Edit, Save, X, Maximize2 } from 'lucide-react'
+import { FileText, Edit, Save, X, Maximize2, History, Link2, Loader2 } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { MarkdownRenderer } from '@/components/markdown-renderer'
 
@@ -11,6 +11,20 @@ interface Artifact {
   path: string
   relativePath: string
   content: string
+}
+
+interface VersionEntry {
+  version: number
+  changeSummary: string | null
+  createdBy: string | null
+  createdAt: string
+  content?: string
+}
+
+interface RelationshipEntry {
+  id: string
+  targetPath: string
+  linkType: string
 }
 
 interface SpecArtifactViewerProps {
@@ -159,6 +173,7 @@ export function SpecArtifactViewer({
                 onContentChange={setEditContent}
                 saving={saving}
                 onFullscreen={onFullscreen}
+                projectId={projectId}
               />
             ) : (
               <p className="text-gray-500">未找到 proposal.md</p>
@@ -180,6 +195,7 @@ export function SpecArtifactViewer({
                   onContentChange={setEditContent}
                   saving={saving}
                   onFullscreen={onFullscreen}
+                  projectId={projectId}
                 />
               ))
             ) : (
@@ -200,6 +216,7 @@ export function SpecArtifactViewer({
                 onContentChange={setEditContent}
                 saving={saving}
                 onFullscreen={onFullscreen}
+                projectId={projectId}
               />
             ) : (
               <p className="text-gray-500">未找到 design.md</p>
@@ -219,6 +236,7 @@ export function SpecArtifactViewer({
                 onContentChange={setEditContent}
                 saving={saving}
                 onFullscreen={onFullscreen}
+                projectId={projectId}
               />
             ) : (
               <p className="text-gray-500">未找到 tasks.md</p>
@@ -241,6 +259,7 @@ interface ArtifactContentProps {
   onContentChange: (content: string) => void
   saving: boolean
   onFullscreen?: (title: string, content: string) => void
+  projectId: string
 }
 
 function ArtifactContent({
@@ -254,15 +273,78 @@ function ArtifactContent({
   onContentChange,
   saving,
   onFullscreen,
+  projectId,
 }: ArtifactContentProps) {
+  const [showVersions, setShowVersions] = useState(false)
+  const [versions, setVersions] = useState<VersionEntry[]>([])
+  const [versionsLoading, setVersionsLoading] = useState(false)
+  const [selectedVersion, setSelectedVersion] = useState<VersionEntry | null>(null)
+
+  const [showRelationships, setShowRelationships] = useState(false)
+  const [relationships, setRelationships] = useState<RelationshipEntry[]>([])
+  const [relationshipsLoading, setRelationshipsLoading] = useState(false)
+
+  const fetchVersionHistory = async () => {
+    if (showVersions) {
+      setShowVersions(false)
+      return
+    }
+    setVersionsLoading(true)
+    setShowVersions(true)
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/openspec/changes/versions?path=${encodeURIComponent(artifact.path)}`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        setVersions(data.versions || [])
+      }
+    } catch {
+      // Silently handle - versions are optional
+    } finally {
+      setVersionsLoading(false)
+    }
+  }
+
+  const fetchRelationships = async () => {
+    if (showRelationships) {
+      setShowRelationships(false)
+      return
+    }
+    setRelationshipsLoading(true)
+    setShowRelationships(true)
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/openspec/changes/links?path=${encodeURIComponent(artifact.path)}`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        setRelationships(data.links || [])
+      }
+    } catch {
+      // Silently handle - relationships are optional
+    } finally {
+      setRelationshipsLoading(false)
+    }
+  }
+
+  const displayContent = selectedVersion?.content ?? artifact.content
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-gray-700">{artifact.relativePath}</h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchVersionHistory}>
+            <History className="mr-1 h-3 w-3" />
+            版本历史
+          </Button>
+          <Button variant="outline" size="sm" onClick={fetchRelationships}>
+            <Link2 className="mr-1 h-3 w-3" />
+            关联
+          </Button>
           {!isEditing && onFullscreen && (
-            <Button variant="outline" size="sm" onClick={() => onFullscreen(artifact.relativePath, artifact.content)}>
+            <Button variant="outline" size="sm" onClick={() => onFullscreen(artifact.relativePath, displayContent)}>
               <Maximize2 className="mr-1 h-3 w-3" />
               全屏
             </Button>
@@ -288,6 +370,84 @@ function ArtifactContent({
         </div>
       </div>
 
+      {/* Version History Panel */}
+      {showVersions && (
+        <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+          <h4 className="text-xs font-medium text-muted-foreground">版本历史</h4>
+          {versionsLoading ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              加载中...
+            </div>
+          ) : versions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">暂无版本记录</p>
+          ) : (
+            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              {versions.map((v) => (
+                <button
+                  key={v.version}
+                  className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-muted/50 transition-colors ${
+                    selectedVersion?.version === v.version ? 'bg-muted' : ''
+                  }`}
+                  onClick={() => setSelectedVersion(selectedVersion?.version === v.version ? null : v)}
+                >
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                    v{v.version}
+                  </Badge>
+                  <span className="flex-1 truncate">{v.changeSummary || '无说明'}</span>
+                  <span className="text-muted-foreground shrink-0">
+                    {v.createdBy || '系统'}
+                  </span>
+                  <span className="text-muted-foreground shrink-0">
+                    {new Date(v.createdAt).toLocaleString('zh-CN')}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {selectedVersion && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={() => setSelectedVersion(null)}
+            >
+              返回最新版本
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Relationships Panel */}
+      {showRelationships && (
+        <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+          <h4 className="text-xs font-medium text-muted-foreground">关联文档</h4>
+          {relationshipsLoading ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              加载中...
+            </div>
+          ) : relationships.length === 0 ? (
+            <p className="text-xs text-muted-foreground">暂无关联文档</p>
+          ) : (
+            <div className="space-y-1">
+              {relationships.map((rel) => (
+                <div
+                  key={rel.id}
+                  className="flex items-center gap-2 rounded px-2 py-1 text-xs bg-background"
+                >
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                    {rel.linkType}
+                  </Badge>
+                  <Link2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="flex-1 truncate">{rel.targetPath}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {isEditing ? (
         <Textarea
           value={editContent}
@@ -297,7 +457,7 @@ function ArtifactContent({
         />
       ) : (
         <div className="rounded-md border bg-background p-4 max-h-[600px] overflow-y-auto">
-          <MarkdownRenderer content={artifact.content} />
+          <MarkdownRenderer content={displayContent} />
         </div>
       )}
     </div>

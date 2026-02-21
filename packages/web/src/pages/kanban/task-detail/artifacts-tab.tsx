@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { api } from '@/lib/api'
 import type { Artifact, FlowRun, NodeRun } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ArtifactPreviewCard } from '@/components/artifact-preview-card'
 import { ArtifactEditorDialog } from '@/components/artifact-editor-dialog'
-import { ChevronDown, ChevronRight, AlertCircle, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, AlertCircle, RefreshCw, Filter } from 'lucide-react'
 
 interface ArtifactsTabProps {
   taskId: string
@@ -40,6 +40,9 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
   const [editingArtifact, setEditingArtifact] = useState<Artifact | null>(null)
   const [editingContent, setEditingContent] = useState('')
   const [editingVersion, setEditingVersion] = useState(0)
+  // Type filter state
+  const [typeFilter, setTypeFilter] = useState<string[]>([])
+  const [showFilter, setShowFilter] = useState(false)
 
   useEffect(() => {
     loadArtifacts()
@@ -90,6 +93,24 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
     setEditingVersion(version)
   }
 
+  // Collect available artifact types for filter (must be before early returns)
+  const availableTypes = useMemo(() => {
+    const types = new Set(artifacts.map(a => a.type))
+    return [...types].sort()
+  }, [artifacts])
+
+  // Apply type filter (must be before early returns)
+  const filteredArtifacts = useMemo(() => {
+    if (typeFilter.length === 0) return artifacts
+    return artifacts.filter(a => typeFilter.includes(a.type))
+  }, [artifacts, typeFilter])
+
+  function toggleTypeFilter(type: string) {
+    setTypeFilter(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    )
+  }
+
   // Loading state with skeleton
   if (loading) {
     return (
@@ -130,7 +151,7 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
 
   // Group artifacts by flow_run_id
   const artifactsByFlow = new Map<string | null, Artifact[]>()
-  for (const artifact of artifacts) {
+  for (const artifact of filteredArtifacts) {
     const key = artifact.flowRunId
     if (!artifactsByFlow.has(key)) {
       artifactsByFlow.set(key, [])
@@ -147,6 +168,47 @@ export function ArtifactsTab({ taskId, onFullscreen }: ArtifactsTabProps) {
 
   return (
     <div className="space-y-3">
+      {/* Type filter */}
+      {availableTypes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={showFilter ? 'secondary' : 'outline'}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowFilter(!showFilter)}
+          >
+            <Filter className="mr-1 h-3 w-3" />
+            筛选
+            {typeFilter.length > 0 && (
+              <Badge variant="default" className="ml-1 h-4 px-1 text-[10px]">
+                {typeFilter.length}
+              </Badge>
+            )}
+          </Button>
+          {showFilter && availableTypes.map(type => (
+            <Button
+              key={type}
+              variant={typeFilter.includes(type) ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => toggleTypeFilter(type)}
+            >
+              {type}
+            </Button>
+          ))}
+          {showFilter && typeFilter.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground"
+              onClick={() => setTypeFilter([])}
+            >
+              清除
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Flow-grouped artifacts */}
       {sortedFlowRuns.map((flowRun) => {
         const flowArtifacts = artifactsByFlow.get(flowRun.id) || []

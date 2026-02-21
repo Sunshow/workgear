@@ -19,7 +19,7 @@ export async function artifactRoutes(app: FastifyInstance) {
     const typesParam = types as string | undefined
     const allowedTypes = typesParam ? typesParam.split(',').map(t => t.trim()).filter(Boolean) : undefined
 
-    // 构建基础查询
+    // 构建基础查询（content 和 createdBy 在 artifactVersions 表中）
     let query = db.select({
       id: artifacts.id,
       taskId: artifacts.taskId,
@@ -27,24 +27,26 @@ export async function artifactRoutes(app: FastifyInstance) {
       nodeRunId: artifacts.nodeRunId,
       type: artifacts.type,
       title: artifacts.title,
-      content: artifacts.content,
+      filePath: artifacts.filePath,
       createdAt: artifacts.createdAt,
-      createdBy: artifacts.createdBy,
     }).from(artifacts)
 
-    // 添加过滤条件
+    // 构建过滤条件
+    const conditions = []
     if (nodeRunId) {
-      query = query.where(eq(artifacts.nodeRunId, nodeRunId))
+      conditions.push(eq(artifacts.nodeRunId, nodeRunId))
     } else if (flowRunId) {
-      query = query.where(eq(artifacts.flowRunId, flowRunId))
+      conditions.push(eq(artifacts.flowRunId, flowRunId))
     } else {
-      query = query.where(eq(artifacts.taskId, taskId!))
+      conditions.push(eq(artifacts.taskId, taskId!))
     }
 
     // 添加类型过滤
     if (allowedTypes && allowedTypes.length > 0) {
-      query = query.where(inArray(artifacts.type, allowedTypes))
+      conditions.push(inArray(artifacts.type, allowedTypes))
     }
+
+    query = query.where(and(...conditions))
 
     // 按创建时间降序排列
     query = query.orderBy(desc(artifacts.createdAt))

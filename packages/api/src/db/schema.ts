@@ -223,8 +223,10 @@ export const artifacts = pgTable('artifacts', {
   filePath: text('file_path'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  index('idx_artifacts_task_id').on(table.taskId),
   index('idx_artifacts_flow_run').on(table.flowRunId),
   index('idx_artifacts_node_run').on(table.nodeRunId),
+  index('idx_artifacts_type').on(table.type),
 ])
 
 // ============================================================
@@ -252,7 +254,9 @@ export const artifactLinks = pgTable('artifact_links', {
   targetId: uuid('target_id').notNull().references(() => artifacts.id, { onDelete: 'cascade' }),
   linkType: varchar('link_type', { length: 50 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index('idx_artifact_links_source_id').on(table.sourceId),
+])
 
 // ============================================================
 // 时间线事件表

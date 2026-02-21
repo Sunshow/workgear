@@ -11,8 +11,8 @@
 - [x] 确保查询返回字段包含 content 和 createdBy
 - [x] 修改错误处理逻辑：taskId 不存在时返回空数组而非 404
 - [x] 添加 includeVersions 查询参数支持（可选功能）
-- [ ] 编写单元测试验证 types 过滤逻辑
-- [ ] 编写集成测试验证完整查询流程
+- [x] 编写单元测试验证 types 过滤逻辑
+- [x] 编写集成测试验证完整查询流程
 
 ---
 
@@ -32,13 +32,13 @@
 - [x] 实现错误状态 UI
   - [x] 显示错误消息
   - [x] 添加重试按钮
-- [ ] 实现类型过滤器（可选功能）
-  - [ ] 添加类型选择下拉菜单
-  - [ ] 更新 API 请求参数
+- [x] 实现类型过滤器（可选功能）
+  - [x] 添加类型选择下拉菜单
+  - [x] 更新 API 请求参数
 - [x] 优化移动端响应式布局
   - [x] 使用 Tailwind CSS 响应式类
   - [x] 确保触摸目标 ≥ 44px
-- [ ] 编写组件单元测试
+- [x] 编写组件单元测试
 
 ### packages/web/src/components/kanban/TaskDetail/SpecArtifactViewer.tsx
 
@@ -47,26 +47,26 @@
   - [x] code 类型：使用 Monaco Editor
   - [x] prd/spec 类型：使用 Markdown 渲染器
   - [x] 其他类型：降级为纯文本
-- [ ] 添加"Version History"功能
-  - [ ] 添加按钮触发版本历史查询
-  - [ ] 实现版本列表 UI
-  - [ ] 支持版本切换
-- [ ] 添加"Relationships"功能
-  - [ ] 添加按钮触发关系查询
-  - [ ] 实现关系图或列表 UI
-  - [ ] 支持导航到关联产物
+- [x] 添加"Version History"功能
+  - [x] 添加按钮触发版本历史查询
+  - [x] 实现版本列表 UI
+  - [x] 支持版本切换
+- [x] 添加"Relationships"功能
+  - [x] 添加按钮触发关系查询
+  - [x] 实现关系图或列表 UI
+  - [x] 支持导航到关联产物
 - [x] 优化移动端全屏对话框体验
   - [x] 使用 Shadcn/ui Dialog 的 fullscreen 模式
-- [ ] 编写组件单元测试
+- [x] 编写组件单元测试
 
 ---
 
 ## 数据库优化（可选）
 
-- [ ] 检查 artifacts 表索引
-  - [ ] 确认 taskId 字段有索引
-  - [ ] 确认 type 字段有索引（或复合索引）
-- [ ] 如需要，添加数据库迁移脚本
+- [x] 检查 artifacts 表索引
+  - [x] 确认 taskId 字段有索引
+  - [x] 确认 type 字段有索引（或复合索引）
+- [x] 如需要，添加数据库迁移脚本
 
 ---
 
@@ -74,12 +74,12 @@
 
 ### 单元测试
 
-- [ ] API 层：测试 types 参数解析和过滤
-- [ ] API 层：测试空结果集返回
-- [ ] 前端：测试 ArtifactsTab 加载状态
-- [ ] 前端：测试 ArtifactsTab 空状态
-- [ ] 前端：测试 ArtifactsTab 错误状态
-- [ ] 前端：测试 SpecArtifactViewer 内容渲染
+- [x] API 层：测试 types 参数解析和过滤
+- [x] API 层：测试空结果集返回
+- [x] 前端：测试 ArtifactsTab 加载状态
+- [x] 前端：测试 ArtifactsTab 空状态
+- [x] 前端：测试 ArtifactsTab 错误状态
+- [x] 前端：测试 SpecArtifactViewer 内容渲染
 
 ### 集成测试
 
@@ -101,9 +101,9 @@
 
 ## 文档更新
 
-- [ ] 更新 API 文档，说明新增的 types 和 includeVersions 参数
-- [ ] 更新前端组件文档，说明 ArtifactsTab 的使用方式
-- [ ] 在 CHANGELOG.md 中记录本次修复
+- [x] 更新 API 文档，说明新增的 types 和 includeVersions 参数
+- [x] 更新前端组件文档，说明 ArtifactsTab 的使用方式
+- [x] 在 CHANGELOG.md 中记录本次修复
 
 ---
 
