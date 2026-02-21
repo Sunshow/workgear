@@ -6,11 +6,11 @@
 
 #### 1. 修改 workgear.sh 脚本
 
-- [ ] 在 `stop_service()` 函数的优雅退出阶段增加子进程清理（S）
+- [x] 在 `stop_service()` 函数的优雅退出阶段增加子进程清理（S）
   - 在 `kill -TERM "$pid"` 后添加 `pkill -TERM -P "$pid"`
   - 确保两个命令都使用 `2>/dev/null || true` 避免错误中断
 
-- [ ] 在 `stop_service()` 函数的强制终止阶段增加子进程清理（S）
+- [x] 在 `stop_service()` 函数的强制终止阶段增加子进程清理（S）
   - 在 `kill -9 "$pid"` 后添加 `pkill -9 -P "$pid"`
   - 确保两个命令都使用 `2>/dev/null || true` 避免错误中断
 
