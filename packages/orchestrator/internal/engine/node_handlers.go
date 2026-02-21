@@ -61,6 +61,15 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		if err != nil {
 			e.logger.Warnw("Failed to load skills for role", "role", role, "error", err)
 			skills = []*db.Skill{} // Continue without skills on error
+			
+			// Record timeline event to notify user of skill loading failure
+			e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, "skill_load_failed", map[string]any{
+				"node_id":   nodeRun.NodeID,
+				"node_name": ptrStr(nodeRun.NodeName),
+				"role":      role,
+				"error":     err.Error(),
+				"message":   fmt.Sprintf("无法加载角色 %s 的技能配置，将继续执行但可能影响结果", role),
+			})
 		} else {
 			e.logger.Infow("Loaded skills for role", "role", role, "skill_count", len(skills))
 		}

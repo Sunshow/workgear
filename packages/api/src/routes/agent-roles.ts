@@ -128,7 +128,22 @@ export async function agentRoleRoutes(app: FastifyInstance) {
     if (providerId !== undefined) updateData.providerId = providerId
     if (modelId !== undefined) updateData.modelId = modelId
     if (systemPrompt !== undefined) updateData.systemPrompt = systemPrompt
-    if (skillIds !== undefined) updateData.skillIds = skillIds
+    if (skillIds !== undefined) {
+      if (!Array.isArray(skillIds)) {
+        return reply.status(400).send({ error: 'skillIds must be an array' })
+      }
+      if (skillIds.length > 0) {
+        const existingSkills = await db
+          .select()
+          .from(skills)
+          .where(inArray(skills.id, skillIds))
+        
+        if (existingSkills.length !== skillIds.length) {
+          return reply.status(400).send({ error: 'One or more skill IDs are invalid' })
+        }
+      }
+      updateData.skillIds = skillIds
+    }
 
     const result = await db
       .update(agentRoles)

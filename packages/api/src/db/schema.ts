@@ -316,7 +316,9 @@ export const agentRoles = pgTable('agent_roles', {
   isBuiltin: boolean('is_builtin').default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index('idx_agent_roles_skill_ids').on(table.skillIds),
+])
 
 // ============================================================
 // Skills 表
