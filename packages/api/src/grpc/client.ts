@@ -98,6 +98,15 @@ export function rerunNode(nodeRunId: string): Promise<{ success: boolean; error?
   })
 }
 
+export function skipNode(nodeRunId: string, dataJson: string): Promise<{ success: boolean; error?: string }> {
+  return new Promise((resolve, reject) => {
+    client.SkipNode({ nodeRunId, dataJson }, (err: any, response: any) => {
+      if (err) return reject(err)
+      resolve(response)
+    })
+  })
+}
+
 // ─── Agent Test ───
 
 export interface TestAgentParams {

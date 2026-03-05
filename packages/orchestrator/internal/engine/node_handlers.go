@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -104,6 +105,13 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
+	// Validate rendered prompt before sending to agent
+	if prompt != "" {
+		if err := validateRenderedPrompt(prompt, nodeRun.NodeID); err != nil {
+			return fmt.Errorf("prompt validation failed: %w", err)
+		}
+	}
+
 	// Parse input context
 	var inputCtx map[string]any
 	if nodeRun.Input != nil {
@@ -120,7 +128,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 	}
 
 	// ─── Git repo cache: prepare worktree ───
-	var worktreePath, depsPath, baseSHA string
+	var worktreePath, bareRepoPath, depsPath, baseSHA string
 	var integrationRef, integrationHeadSHA string
 	useRepoCache := e.repoManager != nil && gitRepoURL != "" && flowRun.ProjectID != nil && *flowRun.ProjectID != ""
 
@@ -129,10 +137,12 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		projectID = *flowRun.ProjectID
 
 		// 1. Ensure bare repo exists and is up-to-date
-		if _, err := e.repoManager.EnsureBareRepo(ctx, projectID, gitRepoURL, gitAccessToken); err != nil {
+		if barePath, err := e.repoManager.EnsureBareRepo(ctx, projectID, gitRepoURL, gitAccessToken); err != nil {
 			e.logger.Warnw("EnsureBareRepo failed, falling back to clone mode",
 				"error", err, "project_id", projectID)
 			useRepoCache = false
+		} else {
+			bareRepoPath = barePath
 		}
 
 		if useRepoCache {
@@ -203,6 +213,14 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
+	e.logger.Infow("DEBUG: timeout resolution",
+		"node_id", nodeRun.NodeID,
+		"nodeDef.Timeout", nodeDef.Timeout,
+		"config.Timeout", func() string { if nodeDef.Config != nil { return nodeDef.Config.Timeout }; return "" }(),
+		"timeoutStr", timeoutStr,
+		"resolved_timeout", timeout.String(),
+	)
+
 	agentReq := &agent.AgentRequest{
 		TaskID:          nodeRun.ID,
 		FlowRunID:       nodeRun.FlowRunID,
@@ -225,6 +243,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		Timeout:         timeout,
 		Skills:          skills,
 		WorktreePath:    worktreePath,
+		BareRepoPath:    bareRepoPath,
 		DepsPath:        depsPath,
 	}
 
@@ -241,6 +260,14 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 			Schema:        opsxDef.Schema,
 			InitIfMissing: opsxDef.InitIfMissing,
 			Action:        opsxDef.Action,
+		}
+	}
+
+	// Resolve git.branch_pattern from DSL (overrides default branch naming)
+	if nodeDef.Config != nil && nodeDef.Config.Git != nil && nodeDef.Config.Git.BranchPattern != "" {
+		if rendered, err := RenderTemplate(nodeDef.Config.Git.BranchPattern, runtimeCtx); err == nil && rendered != "" {
+			agentReq.GitBranch = rendered
+			e.logger.Infow("Resolved git branch from DSL", "branch_pattern", nodeDef.Config.Git.BranchPattern, "resolved", rendered)
 		}
 	}
 
@@ -383,6 +410,38 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		return fmt.Errorf("agent execution failed: %w", err)
 	}
 
+	// 5a-1b. Check for agent-level error in output (e.g. ACP "Internal error: Agent error")
+	if resp.Output != nil {
+		if errMsg, ok := resp.Output["error"].(string); ok && errMsg != "" {
+			if len(logEvents) > 0 {
+				if dbErr := e.db.UpdateNodeRunLogStream(ctx, nodeRun.ID, logEvents); dbErr != nil {
+					e.logger.Warnw("Failed to save log stream on agent error", "error", dbErr)
+				}
+			}
+			stderrInfo := ""
+			if s, ok := resp.Output["stderr"].(string); ok && s != "" {
+				stderrInfo = s
+				if len(stderrInfo) > 500 {
+					stderrInfo = stderrInfo[len(stderrInfo)-500:]
+				}
+			}
+			droidStderr := ""
+			if s, ok := resp.Output["droid_stderr"].(string); ok && s != "" {
+				droidStderr = s
+				if len(droidStderr) > 1000 {
+					droidStderr = droidStderr[len(droidStderr)-1000:]
+				}
+			}
+			e.logger.Warnw("Agent returned error in output",
+				"error", errMsg,
+				"stderr_tail", stderrInfo,
+				"droid_stderr", droidStderr,
+				"node_id", nodeRun.NodeID,
+			)
+			return fmt.Errorf("agent returned error: %s (droid_stderr: %s)", errMsg, droidStderr)
+		}
+	}
+
 	// 5a-2. Persist log stream to database
 	if len(logEvents) > 0 {
 		if dbErr := e.db.UpdateNodeRunLogStream(ctx, nodeRun.ID, logEvents); dbErr != nil {
@@ -404,6 +463,105 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 		}
 	}
 
+	// 5c. Spec mode: write artifact content to git as a markdown file
+	if mode == "spec" && useRepoCache && worktreePath != "" && nodeDef.Config != nil && nodeDef.Config.Artifact != nil && nodeDef.Config.Artifact.FilePath != "" {
+		filePath := nodeDef.Config.Artifact.FilePath
+		if rendered, err := RenderTemplate(filePath, runtimeCtx); err == nil && rendered != "" {
+			filePath = rendered
+		}
+
+		// File-first strategy: always try reading the file from worktree before using stdout.
+		// Agent often writes real content to file but returns only a summary in stdout.
+		resultStr, _ := resp.Output["result"].(string)
+		hasRealResult := false
+
+		// 1. Try exact file path first (highest priority)
+		absPath := filepath.Join(worktreePath, filePath)
+		if fileBytes, err := os.ReadFile(absPath); err == nil && len(fileBytes) > 100 {
+			resultStr = string(fileBytes)
+			hasRealResult = true
+			e.logger.Infow("Loaded spec artifact from worktree file (file-first)", "file_path", filePath, "size", len(resultStr))
+		}
+
+		// 2. If file not found, check if stdout result is real content (not just a summary)
+		if !hasRealResult {
+			stdoutResult, _ := resp.Output["result"].(string)
+			if isRealArtifactContent(stdoutResult, nodeDef.Config.Artifact.Type) {
+				resultStr = stdoutResult
+				hasRealResult = true
+				e.logger.Infow("Using stdout result as artifact (passed quality check)", "size", len(resultStr))
+			} else if len(strings.TrimSpace(stdoutResult)) > 0 {
+				e.logger.Infow("Stdout result failed quality check, will try git fallback",
+					"size", len(stdoutResult), "artifact_type", nodeDef.Config.Artifact.Type)
+			}
+		}
+
+		// 3. Wider fallback: scan git diff for new/modified markdown files
+		if !hasRealResult {
+			cmd := exec.CommandContext(ctx, "git", "diff", "--name-only", "--diff-filter=AM", "HEAD")
+			cmd.Dir = worktreePath
+			if diffOut, err := cmd.Output(); err == nil {
+				for _, f := range strings.Split(strings.TrimSpace(string(diffOut)), "\n") {
+					f = strings.TrimSpace(f)
+					if f != "" && (strings.HasSuffix(f, ".md") || strings.HasSuffix(f, ".markdown")) {
+						absPath := filepath.Join(worktreePath, f)
+						if fileBytes, err := os.ReadFile(absPath); err == nil && len(fileBytes) > 100 {
+							resultStr = string(fileBytes)
+							hasRealResult = true
+							e.logger.Infow("Recovered spec artifact from worktree diff", "file_path", f, "size", len(resultStr))
+							break
+						}
+					}
+				}
+			}
+			// Also check untracked files
+			if !hasRealResult {
+				cmd = exec.CommandContext(ctx, "git", "ls-files", "--others", "--exclude-standard")
+				cmd.Dir = worktreePath
+				if lsOut, err := cmd.Output(); err == nil {
+					for _, f := range strings.Split(strings.TrimSpace(string(lsOut)), "\n") {
+						f = strings.TrimSpace(f)
+						if f != "" && (strings.HasSuffix(f, ".md") || strings.HasSuffix(f, ".markdown")) {
+							absPath := filepath.Join(worktreePath, f)
+							if fileBytes, err := os.ReadFile(absPath); err == nil && len(fileBytes) > 100 {
+								resultStr = string(fileBytes)
+								hasRealResult = true
+								e.logger.Infow("Recovered spec artifact from untracked file", "file_path", f, "size", len(resultStr))
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Backfill result into output so downstream nodes can reference it
+		if hasRealResult {
+			resp.Output["result"] = resultStr
+			resp.Output["summary"] = resultStr
+		}
+
+		content := resultStr
+		if content != "" {
+			commitSHA, err := writeArtifactToGit(ctx, worktreePath, filePath, content, nodeDef.Config.Artifact.Type)
+			if err != nil {
+				e.logger.Warnw("Failed to write spec artifact to git", "error", err, "file_path", filePath)
+			} else {
+				e.logger.Infow("Wrote spec artifact to git", "file_path", filePath, "commit", commitSHA)
+				if resp.GitMetadata == nil {
+					resp.GitMetadata = &agent.GitMetadata{}
+				}
+				resp.GitMetadata.Commit = commitSHA
+				resp.GitMetadata.CommitMessage = fmt.Sprintf("docs: add %s", filePath)
+				resp.GitMetadata.ChangedFiles = append(resp.GitMetadata.ChangedFiles, filePath)
+				resp.GitMetadata.ChangedFilesDetail = append(resp.GitMetadata.ChangedFilesDetail, agent.ChangedFileDetail{
+					Path:   filePath,
+					Status: "added",
+				})
+			}
+		}
+	}
+
 	// 6. Update Git info on task (if agent performed git operations)
 	// Must run before artifact creation so fetchFileFromGit can read the branch from DB
 	if resp.GitMetadata != nil && resp.GitMetadata.Branch != "" {
@@ -416,7 +574,7 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 	// 6a. Git repo cache: integrate node commit into flow integration ref
 	if useRepoCache {
 		// Only modes that produce code changes may need commit integration
-		requiresCommit := mode == "execute" || mode == "opsx_plan" || mode == "opsx_apply"
+		requiresCommit := mode == "execute" || mode == "opsx_plan" || mode == "opsx_apply" || mode == "spec"
 
 		hasCommit := resp.GitMetadata != nil && resp.GitMetadata.Commit != ""
 
@@ -439,10 +597,33 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 				e.logger.Warnw("Failed to update flow integration head", "error", dbErr)
 			}
 
-			// Resolve push branch: prefer resp metadata branch, fallback to gitBranch
-			pushBranch := gitBranch
-			if resp.GitMetadata.Branch != "" {
+			// Resolve push branch with stronger fallbacks
+			pushBranch := ""
+			if resp.GitMetadata != nil && resp.GitMetadata.Branch != "" {
 				pushBranch = resp.GitMetadata.Branch
+			} else if agentReq.GitBranch != "" {
+				pushBranch = agentReq.GitBranch
+			} else if gitBranch != "" {
+				pushBranch = gitBranch
+			}
+			if pushBranch == "" && worktreePath != "" {
+				cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+				cmd.Dir = worktreePath
+				if branchBytes, branchErr := cmd.Output(); branchErr == nil {
+					branchOut := strings.TrimSpace(string(branchBytes))
+					if branchOut != "" && branchOut != "HEAD" {
+						pushBranch = branchOut
+					}
+				}
+			}
+			// Last resort for spec mode: generate a default branch from flow run ID
+			if pushBranch == "" && mode == "spec" {
+				shortID := flowRun.ID
+				if len(shortID) > 8 {
+					shortID = shortID[:8]
+				}
+				pushBranch = fmt.Sprintf("docs/flow-%s", shortID)
+				e.logger.Infow("Generated default branch for spec mode", "branch", pushBranch, "flow_run_id", flowRun.ID)
 			}
 			if pushBranch == "" {
 				return fmt.Errorf("cannot push integration: no branch available (gitBranch and resp.GitMetadata.Branch both empty)")
@@ -493,6 +674,26 @@ func (e *FlowExecutor) executeAgentTask(ctx context.Context, nodeRun *db.NodeRun
 			e.logger.Warnw("opsx_apply validation failed", "error", validationErr, "node_id", nodeRun.NodeID)
 			return fmt.Errorf("opsx_apply validation failed: %w", validationErr)
 		}
+	}
+
+	// 6d-2. Validate opsx_plan result (detect incomplete spec generation)
+	if mode == "opsx_plan" {
+		changeName := ""
+		opsxAction := ""
+		if agentReq.OpsxConfig != nil {
+			changeName = agentReq.OpsxConfig.ChangeName
+			opsxAction = agentReq.OpsxConfig.Action
+		}
+		if validationErr := e.validateOpsxPlanResult(resp, changeName, opsxAction); validationErr != nil {
+			e.logger.Warnw("opsx_plan validation failed", "error", validationErr, "node_id", nodeRun.NodeID)
+			return fmt.Errorf("opsx_plan validation failed: %w", validationErr)
+		}
+	}
+
+	// 6d-3. Validate agent output (prevent "fake completion" with empty result)
+	if validationErr := e.validateAgentOutput(mode, resp.Output, nodeDef); validationErr != nil {
+		e.logger.Warnw("Agent output validation failed", "error", validationErr, "node_id", nodeRun.NodeID, "mode", mode)
+		return fmt.Errorf("agent output validation failed: %w", validationErr)
 	}
 
 	// 6e. Handle transient artifacts (if configured)
@@ -604,6 +805,20 @@ func (e *FlowExecutor) executeHumanInput(ctx context.Context, nodeRun *db.NodeRu
 	var formFields []FormFieldDef
 	if nodeDef != nil && nodeDef.Config != nil {
 		formFields = nodeDef.Config.Form
+	}
+
+	// Persist form definition to node_runs.input so frontend can read it after page refresh
+	// (WebSocket events are ephemeral; input column is the persistent source of truth)
+	if len(formFields) > 0 {
+		inputData := map[string]any{
+			"form":       formFields,
+			"input_type": "human_input",
+		}
+		inputJSON, _ := json.Marshal(inputData)
+		inputStr := string(inputJSON)
+		if err := e.db.UpdateNodeRunInput(ctx, nodeRun.ID, &inputStr); err != nil {
+			e.logger.Warnw("Failed to persist form definition to node input", "error", err)
+		}
 	}
 
 	// Publish waiting_human event with form definition
@@ -770,6 +985,52 @@ func (e *FlowExecutor) handleArtifact(ctx context.Context, flowRun *db.FlowRun, 
 	return nil
 }
 
+// writeArtifactToGit writes artifact content as a file in the worktree, commits it, and returns the commit SHA
+func writeArtifactToGit(ctx context.Context, worktreePath, filePath, content, artifactType string) (string, error) {
+	absPath := filepath.Join(worktreePath, filePath)
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+		return "", fmt.Errorf("mkdir: %w", err)
+	}
+
+	// Write file
+	if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("write file: %w", err)
+	}
+
+	// Git add
+	cmd := exec.CommandContext(ctx, "git", "add", filePath)
+	cmd.Dir = worktreePath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("git add: %s: %w", string(out), err)
+	}
+
+	// Git commit
+	msg := fmt.Sprintf("docs: add %s (%s)", filePath, artifactType)
+	cmd = exec.CommandContext(ctx, "git", "commit", "-m", msg)
+	cmd.Dir = worktreePath
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=WorkGear Agent",
+		"GIT_AUTHOR_EMAIL=agent@workgear.dev",
+		"GIT_COMMITTER_NAME=WorkGear Agent",
+		"GIT_COMMITTER_EMAIL=agent@workgear.dev",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("git commit: %s: %w", string(out), err)
+	}
+
+	// Get commit SHA
+	cmd = exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd.Dir = worktreePath
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse: %w", err)
+	}
+
+	return strings.TrimSpace(string(out)), nil
+}
+
 // extractArtifactContent extracts the relevant content string from agent output
 func extractArtifactContent(artifactType string, output map[string]any) string {
 	// Try type-specific fields first
@@ -802,6 +1063,51 @@ func extractArtifactContent(artifactType string, output map[string]any) string {
 	}
 
 	return ""
+}
+
+// isRealArtifactContent checks whether the given text looks like actual artifact content
+// rather than an agent conversational summary (e.g. "Let me read the docs... Done!").
+func isRealArtifactContent(text string, artifactType string) bool {
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) < 200 {
+		return false
+	}
+
+	// Count markdown structural indicators
+	lines := strings.Split(trimmed, "\n")
+	headingCount := 0
+	listItemCount := 0
+	for _, line := range lines {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, "#") {
+			headingCount++
+		}
+		if strings.HasPrefix(l, "- ") || strings.HasPrefix(l, "* ") || (len(l) > 2 && l[0] >= '1' && l[0] <= '9' && l[1] == '.') {
+			listItemCount++
+		}
+	}
+
+	// Type-specific checks
+	switch artifactType {
+	case "user_story":
+		hasStoryMarker := strings.Contains(trimmed, "US-") ||
+			strings.Contains(trimmed, "Story") ||
+			strings.Contains(trimmed, "As a") ||
+			strings.Contains(trimmed, "Given") ||
+			strings.Contains(trimmed, "验收标准")
+		return hasStoryMarker && headingCount >= 2
+	case "prd":
+		hasPrdMarker := strings.Contains(trimmed, "需求") ||
+			strings.Contains(trimmed, "功能") ||
+			strings.Contains(trimmed, "Requirement") ||
+			strings.Contains(trimmed, "Feature")
+		return hasPrdMarker && headingCount >= 3
+	case "spec", "tech_spec", "plan":
+		return headingCount >= 3 && len(trimmed) > 500
+	}
+
+	// Generic: must have meaningful markdown structure
+	return headingCount >= 2 && (listItemCount >= 3 || len(trimmed) > 500)
 }
 
 // updateTaskGitInfo updates the task's git branch and records git timeline events
@@ -1176,6 +1482,158 @@ func (e *FlowExecutor) validateOpsxApplyResult(resp *agent.AgentResponse) error 
 	return nil
 }
 
+// validateOpsxPlanResult validates that opsx_plan mode produced the expected spec artifacts.
+// Required files: proposal.md, design.md, tasks.md, and at least one spec under specs/.
+// The archive action is exempt from validation.
+func (e *FlowExecutor) validateOpsxPlanResult(resp *agent.AgentResponse, changeName, opsxAction string) error {
+	// Archive action doesn't need spec file validation
+	if opsxAction == "archive" {
+		return nil
+	}
+
+	// 1. Must have Git changes
+	if resp.GitMetadata == nil || len(resp.GitMetadata.ChangedFiles) == 0 {
+		return fmt.Errorf("no spec files generated, agent may have terminated prematurely")
+	}
+
+	// 2. Check for required OpenSpec artifacts in changed files
+	changeDir := "openspec/changes/"
+	if changeName != "" {
+		changeDir = "openspec/changes/" + changeName + "/"
+	}
+
+	hasProposal := false
+	hasDesign := false
+	hasTasks := false
+	hasSpec := false
+
+	for _, f := range resp.GitMetadata.ChangedFiles {
+		if !strings.HasPrefix(f, changeDir) && !strings.HasPrefix(f, "openspec/") {
+			continue
+		}
+		lower := strings.ToLower(f)
+		switch {
+		case strings.HasSuffix(lower, "/proposal.md"):
+			hasProposal = true
+		case strings.HasSuffix(lower, "/design.md"):
+			hasDesign = true
+		case strings.HasSuffix(lower, "/tasks.md"):
+			hasTasks = true
+		case strings.Contains(lower, "/specs/"):
+			hasSpec = true
+		}
+	}
+
+	var missing []string
+	if !hasProposal {
+		missing = append(missing, "proposal.md")
+	}
+	if !hasDesign {
+		missing = append(missing, "design.md")
+	}
+	if !hasTasks {
+		missing = append(missing, "tasks.md")
+	}
+	if !hasSpec {
+		missing = append(missing, "specs/*.md")
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("incomplete spec generation, missing required artifacts: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
+// ─── system_init ───
+
+func (e *FlowExecutor) executeSystemInit(ctx context.Context, nodeRun *db.NodeRun) error {
+	// System init: render output templates and complete immediately
+	// Used for initializing flow variables from DSL config
+
+	// 1. Load DAG to get node config
+	flowRun, err := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("load flow run: %w", err)
+	}
+
+	nodeDef, err := e.getNodeDef(flowRun, nodeRun.NodeID)
+	if err != nil {
+		return err
+	}
+
+	// 2. Build runtime template context
+	runtimeCtx := e.buildRuntimeContext(ctx, flowRun, nodeRun)
+
+	// 3. Build output
+	output := make(map[string]any)
+
+	// 3a. output_from_variables: read raw variable values directly (safe for multiline/special chars)
+	if nodeDef.Config != nil && len(nodeDef.Config.OutputFromVariables) > 0 {
+		// Parse flow run variables
+		var vars map[string]string
+		if flowRun.Variables != nil {
+			_ = json.Unmarshal([]byte(*flowRun.Variables), &vars)
+		}
+		if vars == nil {
+			vars = make(map[string]string)
+		}
+
+		for _, mapping := range nodeDef.Config.OutputFromVariables {
+			if val, ok := vars[mapping.Variable]; ok {
+				output[mapping.Key] = val
+			} else {
+				e.logger.Warnw("Variable not found for output mapping", "variable", mapping.Variable, "key", mapping.Key)
+				output[mapping.Key] = ""
+			}
+		}
+	}
+
+	// 3b. output: render template expressions (for simple values without special chars)
+	if nodeDef.Config != nil && nodeDef.Config.Output != nil {
+		for key, tmpl := range nodeDef.Config.Output {
+			if tmplStr, ok := tmpl.(string); ok {
+				rendered, err := RenderTemplate(tmplStr, runtimeCtx)
+				if err != nil {
+					e.logger.Warnw("Failed to render output template", "key", key, "error", err)
+					output[key] = tmplStr
+				} else {
+					output[key] = rendered
+				}
+			} else {
+				output[key] = tmpl
+			}
+		}
+	}
+
+	// 4. Save output and mark completed
+	if err := e.db.UpdateNodeRunOutput(ctx, nodeRun.ID, output); err != nil {
+		return fmt.Errorf("save output: %w", err)
+	}
+	if err := e.db.UpdateNodeRunStatus(ctx, nodeRun.ID, db.StatusCompleted); err != nil {
+		return fmt.Errorf("update status: %w", err)
+	}
+
+	// 5. Publish completion event
+	e.publishEvent(nodeRun.FlowRunID, nodeRun.ID, nodeRun.NodeID, "node.completed", map[string]any{
+		"output": output,
+	})
+
+	// 6. Record timeline event
+	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRun.ID, "system_init_completed", map[string]any{
+		"node_id":   nodeRun.NodeID,
+		"node_name": ptrStr(nodeRun.NodeName),
+		"output":    output,
+	})
+
+	e.logger.Infow("System init completed",
+		"node_id", nodeRun.NodeID,
+		"output_keys", len(output),
+	)
+
+	return nil
+}
+
 // ─── agent_dispatch ───
 
 // AgentPoolItem represents a candidate agent in the dispatch pool
@@ -1528,6 +1986,63 @@ func parseJSONFromAgentOutput(resp *agent.AgentResponse, target interface{}) err
 	}
 	if err := json.Unmarshal(data, target); err != nil {
 		return fmt.Errorf("unmarshal output: %w", err)
+	}
+
+	return nil
+}
+
+// ─── Validation Helpers ───
+
+// validateRenderedPrompt checks that the rendered prompt is non-trivial and
+// doesn't contain unresolved template variables.
+func validateRenderedPrompt(prompt string, nodeID string) error {
+	trimmed := strings.TrimSpace(prompt)
+	if len(trimmed) < 20 {
+		return fmt.Errorf("rendered prompt too short (%d chars) for node %s", len(trimmed), nodeID)
+	}
+
+	// Check for unresolved template variables (pongo2 silently renders them as empty string,
+	// but raw {{ }} left in the prompt indicates a rendering failure)
+	unresolvedPattern := regexp.MustCompile(`\{\{.*?\}\}`)
+	unresolvedMatches := unresolvedPattern.FindAllString(trimmed, -1)
+	if len(unresolvedMatches) > 0 {
+		return fmt.Errorf("rendered prompt has %d unresolved template variables for node %s: %v",
+			len(unresolvedMatches), nodeID, unresolvedMatches)
+	}
+
+	return nil
+}
+
+// validateAgentOutput checks that agent produced meaningful output before marking completed.
+// Prevents "fake completion" where agent returns empty result but node is marked completed.
+func (e *FlowExecutor) validateAgentOutput(mode string, output map[string]any, nodeDef *NodeDef) error {
+	// generate_change_name has its own extraction logic, skip
+	if mode == "generate_change_name" {
+		return nil
+	}
+	// code_review is transient, may not produce result/summary
+	if nodeDef.Config != nil && nodeDef.Config.Transient {
+		return nil
+	}
+	// opsx_apply / execute modes: primary value is git commits, not text output
+	if mode == "opsx_apply" || mode == "execute" {
+		return nil
+	}
+
+	resultStr, _ := output["result"].(string)
+	summaryStr, _ := output["summary"].(string)
+	content := strings.TrimSpace(resultStr + summaryStr)
+
+	if len(content) < 50 {
+		return fmt.Errorf("agent output too short (%d chars), likely incomplete or empty", len(content))
+	}
+
+	// spec mode with artifact config: also verify artifact content is extractable
+	if mode == "spec" && nodeDef.Config != nil && nodeDef.Config.Artifact != nil {
+		artifactContent := extractArtifactContent(nodeDef.Config.Artifact.Type, output)
+		if len(strings.TrimSpace(artifactContent)) < 50 {
+			return fmt.Errorf("spec artifact content too short (%d chars)", len(strings.TrimSpace(artifactContent)))
+		}
 	}
 
 	return nil

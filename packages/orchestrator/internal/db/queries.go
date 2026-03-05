@@ -344,6 +344,42 @@ func (c *Client) UpdateNodeRunTransientArtifacts(ctx context.Context, id string,
 	return err
 }
 
+// UpdateNodeRunOutputRaw sets the output of a node run from a raw JSON string
+func (c *Client) UpdateNodeRunOutputRaw(ctx context.Context, id string, outputJSON string) error {
+	_, err := c.pool.Exec(ctx, `
+		UPDATE node_runs SET output = $2 WHERE id = $1
+	`, id, outputJSON)
+	return err
+}
+
+// GetAllNodeRuns returns all node runs for a flow (latest attempt per node)
+func (c *Client) GetAllNodeRuns(ctx context.Context, flowRunID string) ([]*NodeRun, error) {
+	rows, err := c.pool.Query(ctx, `
+		SELECT nr.id, nr.flow_run_id, nr.node_id, nr.node_type, nr.node_name, nr.status, nr.attempt
+		FROM node_runs nr
+		INNER JOIN (
+			SELECT DISTINCT ON (node_id) id
+			FROM node_runs
+			WHERE flow_run_id = $1
+			ORDER BY node_id, attempt DESC, created_at DESC
+		) latest ON nr.id = latest.id
+		WHERE nr.flow_run_id = $1
+	`, flowRunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []*NodeRun
+	for rows.Next() {
+		var nr NodeRun
+		if err := rows.Scan(&nr.ID, &nr.FlowRunID, &nr.NodeID, &nr.NodeType, &nr.NodeName, &nr.Status, &nr.Attempt); err != nil {
+			return nil, err
+		}
+		result = append(result, &nr)
+	}
+	return result, nil
+}
 // UpdateNodeRunError sets the error on a node run
 func (c *Client) UpdateNodeRunError(ctx context.Context, id, status, errMsg string) error {
 	now := time.Now()
@@ -563,6 +599,74 @@ func (c *Client) ResetStaleRunningNodes(ctx context.Context) (int, error) {
 	return int(result.RowsAffected()), nil
 }
 
+// CancelStaleFlowRuns cancels flow_runs stuck in 'running' status with no progress
+// for longer than the given threshold. Also cancels their non-terminal node_runs.
+func (c *Client) CancelStaleFlowRuns(ctx context.Context, staleThreshold time.Duration) (int, error) {
+	cutoff := time.Now().UTC().Add(-staleThreshold)
+
+	// Cancel stale flow_runs
+	result, err := c.pool.Exec(ctx, `
+		UPDATE flow_runs
+		SET status = 'cancelled', error = 'auto-cancelled: stale running flow', completed_at = NOW()
+		WHERE status = 'running'
+		  AND started_at < $1
+		  AND NOT EXISTS (
+		    SELECT 1 FROM node_runs
+		    WHERE node_runs.flow_run_id = flow_runs.id
+		      AND node_runs.status = 'running'
+		      AND node_runs.locked_at > $1
+		  )
+	`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("cancel stale flow_runs: %w", err)
+	}
+	flowCount := int(result.RowsAffected())
+
+	if flowCount > 0 {
+		// Cancel non-terminal node_runs belonging to cancelled flow_runs
+		_, err = c.pool.Exec(ctx, `
+			UPDATE node_runs
+			SET status = 'cancelled', completed_at = NOW(), locked_by = NULL
+			WHERE flow_run_id IN (
+				SELECT id FROM flow_runs
+				WHERE status = 'cancelled' AND error = 'auto-cancelled: stale running flow'
+			)
+			AND status NOT IN ('completed', 'cancelled', 'failed')
+		`)
+		if err != nil {
+			return flowCount, fmt.Errorf("cancel stale node_runs: %w", err)
+		}
+	}
+
+	return flowCount, nil
+}
+
+// SyncStaleDslSnapshots updates dsl_snapshot of active flow_runs to match their workflow's current DSL.
+// This prevents stale DSL snapshots from causing issues after template updates.
+func (c *Client) SyncStaleDslSnapshots(ctx context.Context) (int, error) {
+	rows, err := c.pool.Query(ctx, `
+		UPDATE flow_runs fr
+		SET dsl_snapshot = w.dsl
+		FROM workflows w
+		WHERE fr.workflow_id = w.id
+		  AND fr.status IN ('running', 'pending')
+		  AND fr.dsl_snapshot IS DISTINCT FROM w.dsl
+		RETURNING fr.id
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("sync stale DSL snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id)
+		count++
+	}
+	return count, rows.Err()
+}
+
 // ─── Timeline Queries ───
 
 // UpdateNodeRunInput sets the input of a node run
@@ -668,6 +772,84 @@ func (c *Client) CreateArtifactVersion(ctx context.Context, artifactID string, v
 		return fmt.Errorf("create artifact version: %w", err)
 	}
 	return nil
+}
+
+// PreviousNodeOutput holds a completed node's output from a previous flow run
+type PreviousNodeOutput struct {
+	NodeID string
+	Output string
+}
+
+// GetPreviousFlowCompletedNodes finds the most recent non-cancelled flow run for the same task
+// and returns all completed node outputs (latest attempt per node).
+func (c *Client) GetPreviousFlowCompletedNodes(ctx context.Context, taskID, currentFlowRunID string) ([]PreviousNodeOutput, error) {
+	rows, err := c.pool.Query(ctx, `
+		WITH prev_flow AS (
+			SELECT id FROM flow_runs
+			WHERE task_id = $1 AND id != $2 AND status != 'pending'
+			ORDER BY created_at DESC
+			LIMIT 1
+		)
+		SELECT nr.node_id, nr.output
+		FROM node_runs nr
+		INNER JOIN (
+			SELECT DISTINCT ON (node_id) id
+			FROM node_runs
+			WHERE flow_run_id = (SELECT id FROM prev_flow)
+			ORDER BY node_id, attempt DESC, created_at DESC
+		) latest ON nr.id = latest.id
+		WHERE nr.status = 'completed' AND nr.output IS NOT NULL
+	`, taskID, currentFlowRunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []PreviousNodeOutput
+	for rows.Next() {
+		var p PreviousNodeOutput
+		if err := rows.Scan(&p.NodeID, &p.Output); err != nil {
+			return nil, err
+		}
+		results = append(results, p)
+	}
+	return results, nil
+}
+
+// HasPreviousFlowOutput checks if a node has completed output from any previous flow of the same task
+func (c *Client) HasPreviousFlowOutput(ctx context.Context, flowRunID, nodeID string) (bool, error) {
+	var exists bool
+	err := c.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM node_runs nr
+			INNER JOIN flow_runs fr ON nr.flow_run_id = fr.id
+			WHERE fr.task_id = (SELECT task_id FROM flow_runs WHERE id = $1)
+			  AND fr.id != $1
+			  AND nr.node_id = $2
+			  AND nr.status = 'completed'
+			  AND nr.output IS NOT NULL
+		)
+	`, flowRunID, nodeID).Scan(&exists)
+	return exists, err
+}
+
+// GetRunningFlowRunIDs returns all flow_run IDs in 'running' status.
+func (c *Client) GetRunningFlowRunIDs(ctx context.Context) ([]string, error) {
+	rows, err := c.pool.Query(ctx, `SELECT id FROM flow_runs WHERE status = 'running'`)
+	if err != nil {
+		return nil, fmt.Errorf("get running flow runs: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 // UpdateTaskColumn moves a task to the specified kanban column by column name.

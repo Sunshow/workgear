@@ -312,7 +312,7 @@ export const agentRoles = pgTable('agent_roles', {
   providerId: uuid('provider_id').references(() => agentProviders.id, { onDelete: 'set null' }),
   modelId: uuid('model_id').references(() => agentModels.id, { onDelete: 'set null' }),
   systemPrompt: text('system_prompt').notNull(),
-  skillIds: jsonb('skill_ids').default('[]').notNull(),
+  skillIds: jsonb('skill_ids').default([]).notNull(),
   isBuiltin: boolean('is_builtin').default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

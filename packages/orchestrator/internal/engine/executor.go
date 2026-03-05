@@ -76,7 +76,39 @@ func (e *FlowExecutor) Start(ctx context.Context) error {
 		e.logger.Infow("Recovered stale running nodes", "count", count)
 	}
 
-	// 2. Start worker loop
+	// 2. Cancel flow_runs stuck in 'running' for over 2 hours with no active nodes
+	staleFlows, err := e.db.CancelStaleFlowRuns(ctx, 2*time.Hour)
+	if err != nil {
+		e.logger.Warnw("Failed to cancel stale flow_runs", "error", err)
+	} else if staleFlows > 0 {
+		e.logger.Infow("Cancelled stale flow_runs", "count", staleFlows)
+	}
+
+	// 2b. Sync stale DSL snapshots: update active flow_runs whose dsl_snapshot differs from workflows.dsl
+	synced, err := e.db.SyncStaleDslSnapshots(ctx)
+	if err != nil {
+		e.logger.Warnw("Failed to sync stale DSL snapshots", "error", err)
+	} else if synced > 0 {
+		e.logger.Warnw("Synced stale DSL snapshots to match current workflow DSL", "count", synced)
+	}
+
+	// 2c. Re-advance running flows: ensure pending nodes with all deps completed get queued
+	// (handles cases where nodes were manually marked completed but advanceDAG wasn't called)
+	runningFlows, err := e.db.GetRunningFlowRunIDs(ctx)
+	if err != nil {
+		e.logger.Warnw("Failed to get running flow runs for re-advance", "error", err)
+	} else {
+		for _, fid := range runningFlows {
+			if err := e.advanceDAG(ctx, fid); err != nil {
+				e.logger.Warnw("Failed to re-advance flow", "flow_run_id", fid, "error", err)
+			}
+		}
+		if len(runningFlows) > 0 {
+			e.logger.Infow("Re-advanced running flows on startup", "count", len(runningFlows))
+		}
+	}
+
+	// 3. Start worker loop
 	e.logger.Infow("Starting worker loop", "worker_id", e.workerID, "max_concurrency", e.maxConcurrency)
 	go e.runWorkerLoop(ctx)
 
@@ -243,6 +275,8 @@ func (e *FlowExecutor) executeNode(ctx context.Context, nodeRun *db.NodeRun) err
 		return e.executeHumanReview(ctx, nodeRun)
 	case "human_input":
 		return e.executeHumanInput(ctx, nodeRun)
+	case "system_init":
+		return e.executeSystemInit(ctx, nodeRun)
 	default:
 		return fmt.Errorf("unknown node type: %s", nodeType)
 	}

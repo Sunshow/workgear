@@ -45,9 +45,14 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 	// 1. Build full prompt with skills
 	prompt := a.promptBuilder.Build(req, req.Skills)
 
-	// 2. Prepare environment variables
+	// Write prompt to temp file to avoid ARG_MAX limit
+	promptFilePath, err := writePromptToFile(prompt, req.NodeID)
+	if err != nil {
+		return nil, fmt.Errorf("write prompt file: %w", err)
+	}
+
+	// 2. Prepare environment variables (AGENT_PROMPT no longer passed as env var)
 	env := map[string]string{
-		"AGENT_PROMPT": prompt,
 		"AGENT_MODE":   req.Mode,
 		"TASK_ID":      req.TaskID,
 		"NODE_ID":      req.NodeID,
@@ -85,13 +90,18 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 	if baseBranch == "" {
 		baseBranch = "main"
 	}
+	// If GitBranch looks like a feature branch (set by DSL git.branch_pattern),
+	// use "main" as the base branch instead
+	if baseBranch != "main" && baseBranch != "master" {
+		baseBranch = "main"
+	}
 	env["GIT_BRANCH"] = baseBranch
 	env["GIT_BASE_BRANCH"] = baseBranch
 
 	// Feature branch (for pushing)
-	// Priority: 1. OpsxConfig.ChangeName, 2. existing gitBranch (non-main), 3. generate from task title
+	// Priority: 1. DSL git.branch_pattern (already in req.GitBranch), 2. OpsxConfig.ChangeName, 3. generate from task title
 	featureBranch := req.GitBranch
-	if featureBranch == "" || featureBranch == "main" {
+	if featureBranch == "" || featureBranch == "main" || featureBranch == "master" {
 		if req.OpsxConfig != nil && req.OpsxConfig.ChangeName != "" {
 			featureBranch = "agent/" + req.OpsxConfig.ChangeName
 		} else {
@@ -161,13 +171,15 @@ func (a *ClaudeCodeAdapter) BuildRequest(ctx context.Context, req *AgentRequest)
 	}
 
 	return &ExecutorRequest{
-		Image:        a.image,
-		Command:      nil, // Use image's ENTRYPOINT
-		Env:          env,
-		WorkDir:      "/workspace",
-		Timeout:      timeout,
-		WorktreePath: req.WorktreePath,
-		DepsPath:     req.DepsPath,
+		Image:          a.image,
+		Command:        nil, // Use image's ENTRYPOINT
+		Env:            env,
+		WorkDir:        "/workspace",
+		Timeout:        timeout,
+		WorktreePath:   req.WorktreePath,
+		BareRepoPath:   req.BareRepoPath,
+		DepsPath:       req.DepsPath,
+		PromptFilePath: promptFilePath,
 	}, nil
 }
 

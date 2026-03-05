@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { eq } from 'drizzle-orm'
+import { eq, and, desc, ne, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { nodeRuns, flowRuns } from '../db/schema.js'
 import * as orchestrator from '../grpc/client.js'
@@ -224,5 +224,100 @@ export async function nodeRunRoutes(app: FastifyInstance) {
       app.log.error(error)
       return reply.status(500).send({ error: error.message || 'Failed to rerun node' })
     }
+  })
+
+  // Get previous flow's output for the same node (for artifact reuse)
+  app.get<{ Params: { id: string } }>('/:id/previous-output', async (request, reply) => {
+    const { id } = request.params
+
+    const [nodeRun] = await db.select().from(nodeRuns).where(eq(nodeRuns.id, id))
+    if (!nodeRun) {
+      return reply.status(404).send({ error: 'NodeRun not found' })
+    }
+
+    const [flowRun] = await db.select().from(flowRuns).where(eq(flowRuns.id, nodeRun.flowRunId))
+    if (!flowRun) {
+      return reply.status(404).send({ error: 'FlowRun not found' })
+    }
+
+    // Search across ALL previous flows for a completed node with the same node_id and non-null output
+    const [prevNodeRun] = await db
+      .select({ output: nodeRuns.output, nodeName: nodeRuns.nodeName })
+      .from(nodeRuns)
+      .innerJoin(flowRuns, eq(nodeRuns.flowRunId, flowRuns.id))
+      .where(and(
+        eq(flowRuns.taskId, flowRun.taskId),
+        ne(flowRuns.id, flowRun.id),
+        eq(nodeRuns.nodeId, nodeRun.nodeId),
+        eq(nodeRuns.status, 'completed'),
+        sql`${nodeRuns.output} IS NOT NULL`
+      ))
+      .orderBy(desc(flowRuns.createdAt), desc(nodeRuns.attempt))
+      .limit(1)
+
+    if (!prevNodeRun || !prevNodeRun.output) {
+      return { hasPrevious: false }
+    }
+
+    return {
+      hasPrevious: true,
+      output: prevNodeRun.output,
+      nodeName: prevNodeRun.nodeName,
+    }
+  })
+
+  // Skip a node by injecting previous flow's output
+  app.post<{
+    Params: { id: string }
+    Body: { outputJson: string }
+  }>('/:id/skip', async (request, reply) => {
+    const { id } = request.params
+    const { outputJson } = request.body
+
+    if (!outputJson) {
+      return reply.status(422).send({ error: 'outputJson is required' })
+    }
+
+    const [nodeRun] = await db.select().from(nodeRuns).where(eq(nodeRuns.id, id))
+    if (!nodeRun) {
+      return reply.status(404).send({ error: 'NodeRun not found' })
+    }
+
+    try {
+      const result = await orchestrator.skipNode(id, outputJson)
+
+      if (!result.success) {
+        return reply.status(500).send({ error: result.error || 'Orchestrator error' })
+      }
+
+      return { success: true }
+    } catch (error: any) {
+      app.log.error(error)
+      return reply.status(500).send({ error: error.message || 'Failed to skip node' })
+    }
+  })
+
+  // Proceed with execution for a node paused for reuse check
+  app.post<{ Params: { id: string } }>('/:id/proceed', async (request, reply) => {
+    const { id } = request.params
+
+    const [nodeRun] = await db.select().from(nodeRuns).where(eq(nodeRuns.id, id))
+    if (!nodeRun) {
+      return reply.status(404).send({ error: 'NodeRun not found' })
+    }
+
+    if (nodeRun.status !== 'waiting_human') {
+      return reply.status(422).send({ error: `Cannot proceed node in status: ${nodeRun.status}` })
+    }
+
+    // Remove _reuse_available flag from input and set status to queued
+    let input = nodeRun.input ? (typeof nodeRun.input === 'string' ? JSON.parse(nodeRun.input) : nodeRun.input) : {}
+    delete input._reuse_available
+    await db.update(nodeRuns).set({
+      status: 'queued',
+      input: JSON.stringify(input),
+    }).where(eq(nodeRuns.id, id))
+
+    return { success: true }
   })
 }

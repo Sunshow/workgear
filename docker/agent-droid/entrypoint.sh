@@ -180,6 +180,16 @@ fi
 # ─── Step 2: Run Droid CLI via ACP Protocol ───
 log_info "Running droid CLI via ACP protocol..."
 
+# Load prompt from file (preferred) or env var (fallback)
+if [ -f /tmp/agent_prompt.txt ]; then
+    AGENT_PROMPT=$(cat /tmp/agent_prompt.txt)
+    log_info "Loaded prompt from file (/tmp/agent_prompt.txt, $(wc -c < /tmp/agent_prompt.txt) bytes)"
+elif [ -n "$AGENT_PROMPT" ]; then
+    log_info "Using prompt from environment variable"
+else
+    log_info "Warning: No prompt found (neither file nor env var)"
+fi
+
 # Handle test mode defaults
 if [ "$AGENT_MODE" = "test" ]; then
     log_info "Test mode: running simple validation..."
@@ -196,11 +206,8 @@ fi
 
 # Map AGENT_MODE to ACP mode ID
 case "$AGENT_MODE" in
-    spec)       ACP_MODE="normal" ;;
     review)     ACP_MODE="auto-low" ;;
     test)       ACP_MODE="auto-low" ;;
-    execute|opsx_plan|opsx_apply)
-                ACP_MODE="auto-high" ;;
     *)          ACP_MODE="auto-high" ;;
 esac
 log_info "ACP mode: $ACP_MODE"
@@ -254,9 +261,34 @@ acp_send() {
 acp_wait_response() {
     local expected_id="$1"
     local timeout_sec="${2:-30}"
+    local got_output=false
+    local in_tool_call=false
     ACP_LAST_RESPONSE=""
 
-    while IFS= read -r -t "$timeout_sec" line <&5; do
+    while true; do
+        # Check if droid process is still alive before blocking on read
+        if ! kill -0 $DROID_PID 2>/dev/null; then
+            log_info "Droid process exited while waiting for response id=$expected_id"
+            break
+        fi
+
+        # Use a short read timeout so we can periodically check process liveness
+        # but respect the overall timeout via SECONDS tracking
+        if ! IFS= read -r -t 5 line <&5; then
+            # read timed out (5s), check if droid is still alive
+            if ! kill -0 $DROID_PID 2>/dev/null; then
+                log_info "Droid process exited (detected on read timeout)"
+                break
+            fi
+            # Decrement remaining time
+            timeout_sec=$((timeout_sec - 5))
+            if [ "$timeout_sec" -le 0 ]; then
+                log_info "ACP timeout waiting for response id=$expected_id"
+                return 1
+            fi
+            continue
+        fi
+
         [ -z "$line" ] && continue
 
         local msg_id=$(echo "$line" | jq -r '.id // empty' 2>/dev/null)
@@ -268,6 +300,8 @@ acp_wait_response() {
             if [ "$update_type" = "agent_message_chunk" ]; then
                 local chunk=$(echo "$line" | jq -r '.params.update.content.text // empty' 2>/dev/null)
                 ACP_RESPONSE_TEXT="${ACP_RESPONSE_TEXT}${chunk}"
+                got_output=true
+                in_tool_call=false
                 # Emit as stream-json assistant event for real-time log streaming
                 emit_stream_event "assistant" "" "$chunk"
             elif [ "$update_type" = "tool_call" ]; then
@@ -275,6 +309,19 @@ acp_wait_response() {
                 if [ -n "$tool_name" ]; then
                     emit_stream_event "system" "log" "Tool call: $tool_name"
                 fi
+                # Capture ExitSpecMode plan content as the main result
+                if [ "$tool_name" = "ExitSpecMode" ]; then
+                    local plan_content=$(echo "$line" | jq -r '.params.update.input.plan // empty' 2>/dev/null)
+                    if [ -n "$plan_content" ]; then
+                        ACP_RESPONSE_TEXT="${plan_content}"
+                        emit_stream_event "system" "log" "Captured ExitSpecMode plan ($(echo "$plan_content" | wc -c) bytes)"
+                    fi
+                fi
+                got_output=true
+                in_tool_call=true
+            elif [ "$update_type" = "tool_result" ]; then
+                in_tool_call=false
+                got_output=true
             fi
             continue
         fi
@@ -292,7 +339,14 @@ acp_wait_response() {
         fi
     done
 
-    log_info "ACP timeout waiting for response id=$expected_id"
+    # Droid process exited without sending final response
+    # If we got some output, treat as success (agent completed but protocol didn't send final ack)
+    if [ "$got_output" = "true" ] && [ -n "$ACP_RESPONSE_TEXT" ]; then
+        log_info "Droid process exited after producing output (id=$expected_id), treating as complete"
+        return 0
+    fi
+
+    log_info "ACP failed: droid process exited without response id=$expected_id"
     return 1
 }
 
@@ -370,7 +424,13 @@ rm -f "$ACP_IN" "$ACP_OUT"
 if [ "$ACP_FAILED" = "true" ]; then
     emit_stream_event "result" "error" "ACP execution failed"
     ERROR_MSG=$(echo "$ACP_LAST_RESPONSE" | jq -r '.error.message // "ACP execution failed"' 2>/dev/null)
-    echo "{\"error\": \"$ERROR_MSG\"}" > "$RESULT_FILE"
+    DROID_STDERR=""
+    if [ -f /tmp/droid_stderr.log ] && [ -s /tmp/droid_stderr.log ]; then
+        DROID_STDERR=$(tail -c 2000 /tmp/droid_stderr.log)
+        log_info "Droid CLI stderr: $DROID_STDERR"
+    fi
+    jq -n --arg error "$ERROR_MSG" --arg stderr "$DROID_STDERR" \
+        '{error: $error, droid_stderr: $stderr}' > "$RESULT_FILE"
 else
     emit_stream_event "result" "success" "Droid execution completed"
     jq -n \

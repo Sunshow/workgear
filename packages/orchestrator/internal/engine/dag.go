@@ -64,13 +64,38 @@ func (e *FlowExecutor) advanceDAG(ctx context.Context, flowRunID string) error {
 			if err != nil {
 				e.logger.Warnw("Failed to resolve node input", "node_id", pending.NodeID, "error", err)
 			}
+			if input == nil {
+				input = make(map[string]any)
+			}
+
+			// For agent_task nodes, check if previous flow has reusable output
+			nodeType := ptrStr(pending.NodeType)
+			if nodeType == "agent_task" {
+				hasReuse, err := e.db.HasPreviousFlowOutput(ctx, flowRunID, pending.NodeID)
+				if err != nil {
+					e.logger.Warnw("Failed to check reuse", "node_id", pending.NodeID, "error", err)
+				}
+				if hasReuse {
+					input["_reuse_available"] = true
+					inputJSON := jsonStr(input)
+					if err := e.db.UpdateNodeRunInput(ctx, pending.ID, inputJSON); err != nil {
+						e.logger.Warnw("Failed to update node input", "node_id", pending.NodeID, "error", err)
+					}
+					// Set to waiting_human so scheduler won't pick it up
+					if err := e.db.UpdateNodeRunStatus(ctx, pending.ID, db.StatusWaitingHuman); err != nil {
+						e.logger.Errorw("Failed to set node waiting_human for reuse", "node_id", pending.NodeID, "error", err)
+						continue
+					}
+					e.logger.Infow("Paused node for reuse check", "node_id", pending.NodeID, "flow_run_id", flowRunID)
+					e.publishEvent(flowRunID, pending.ID, pending.NodeID, "node.waiting_human", map[string]any{"reuse_available": true})
+					continue
+				}
+			}
 
 			// Update input if resolved
-			if input != nil {
-				inputJSON := jsonStr(input)
-				if err := e.db.UpdateNodeRunInput(ctx, pending.ID, inputJSON); err != nil {
-					e.logger.Warnw("Failed to update node input", "node_id", pending.NodeID, "error", err)
-				}
+			inputJSON := jsonStr(input)
+			if err := e.db.UpdateNodeRunInput(ctx, pending.ID, inputJSON); err != nil {
+				e.logger.Warnw("Failed to update node input", "node_id", pending.NodeID, "error", err)
 			}
 
 			// Activate: PENDING → QUEUED
@@ -691,6 +716,82 @@ func (e *FlowExecutor) HandleHumanInput(ctx context.Context, nodeRunID, dataJSON
 	return e.advanceDAG(ctx, nodeRun.FlowRunID)
 }
 
+// HandleSkipNode skips a node by injecting previous flow's output and marking it completed
+func (e *FlowExecutor) HandleSkipNode(ctx context.Context, nodeRunID, outputJSON string) error {
+	nodeRun, err := e.db.GetNodeRun(ctx, nodeRunID)
+	if err != nil {
+		return fmt.Errorf("get node run: %w", err)
+	}
+
+	flowRun, err := e.db.GetFlowRun(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("get flow run: %w", err)
+	}
+	if flowRun.Status == db.StatusCancelled {
+		return fmt.Errorf("flow has been cancelled")
+	}
+
+	// Allow skipping nodes in pending, queued, or waiting_human status
+	switch nodeRun.Status {
+	case db.StatusPending, db.StatusQueued, db.StatusWaitingHuman:
+		// OK
+	default:
+		return fmt.Errorf("cannot skip node in status: %s", nodeRun.Status)
+	}
+
+	// Verify all upstream dependencies are completed before allowing skip
+	dag, err := e.getDAG(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("load DAG: %w", err)
+	}
+	completedNodes, err := e.db.GetCompletedNodeIDs(ctx, nodeRun.FlowRunID)
+	if err != nil {
+		return fmt.Errorf("get completed nodes: %w", err)
+	}
+	for _, depID := range dag.GetDependencies(nodeRun.NodeID) {
+		if !completedNodes[depID] {
+			return fmt.Errorf("上游节点 %s 尚未完成，无法跳过当前节点", depID)
+		}
+	}
+
+	if err := e.db.UpdateNodeRunOutputRaw(ctx, nodeRunID, outputJSON); err != nil {
+		return fmt.Errorf("save output: %w", err)
+	}
+
+	if err := e.db.UpdateNodeRunStatus(ctx, nodeRunID, db.StatusCompleted); err != nil {
+		return fmt.Errorf("update status: %w", err)
+	}
+
+	e.publishEvent(nodeRun.FlowRunID, nodeRunID, nodeRun.NodeID, "node.completed", map[string]any{
+		"skipped": true,
+	})
+
+	e.recordTimeline(ctx, flowRun.TaskID, nodeRun.FlowRunID, nodeRunID, "node_skipped", map[string]any{
+		"node_id":   nodeRun.NodeID,
+		"node_name": ptrStr(nodeRun.NodeName),
+		"message":   fmt.Sprintf("复用历史产物跳过节点：%s", ptrStr(nodeRun.NodeName)),
+	})
+
+	// Write artifact to git if node has file_path configured
+	nodeDef, defErr := e.getNodeDef(flowRun, nodeRun.NodeID)
+	if defErr == nil && nodeDef.Config != nil && nodeDef.Config.Artifact != nil && nodeDef.Config.Artifact.FilePath != "" {
+		var output map[string]any
+		if err := json.Unmarshal([]byte(outputJSON), &output); err == nil {
+			content := extractArtifactContent(nodeDef.Config.Artifact.Type, output)
+			if content != "" {
+				runtimeCtx := e.buildRuntimeContext(ctx, flowRun, nodeRun)
+				filePath := nodeDef.Config.Artifact.FilePath
+				if rendered, renderErr := RenderTemplate(filePath, runtimeCtx); renderErr == nil && rendered != "" {
+					filePath = rendered
+				}
+				e.writeSkippedArtifactToGit(ctx, flowRun, nodeRun, filePath, content, nodeDef.Config.Artifact.Type)
+			}
+		}
+	}
+
+	return e.advanceDAG(ctx, nodeRun.FlowRunID)
+}
+
 // HandleRetry retries a failed node
 func (e *FlowExecutor) HandleRetry(ctx context.Context, nodeRunID string) error {
 	nodeRun, err := e.db.GetNodeRun(ctx, nodeRunID)
@@ -1073,6 +1174,79 @@ func (e *FlowExecutor) recordTimeline(ctx context.Context, taskID, flowRunID, no
 	if err := e.db.CreateTimelineEvent(ctx, evt); err != nil {
 		e.logger.Warnw("Failed to create timeline event", "error", err)
 	}
+}
+
+// writeSkippedArtifactToGit writes artifact content to git when a node is skipped (reused).
+// Creates a temporary worktree, writes the file, commits, integrates, and pushes.
+func (e *FlowExecutor) writeSkippedArtifactToGit(ctx context.Context, flowRun *db.FlowRun, nodeRun *db.NodeRun, filePath, content, artifactType string) {
+	if e.repoManager == nil || flowRun.ProjectID == nil || *flowRun.ProjectID == "" {
+		e.logger.Debugw("Skipping git write for skipped artifact: no repo manager or project", "node_id", nodeRun.NodeID)
+		return
+	}
+
+	projectID := *flowRun.ProjectID
+
+	gitRepoURL, _, gitAccessToken, _, _, _, _, _, err := e.db.GetTaskGitInfoFull(ctx, flowRun.TaskID)
+	if err != nil || gitRepoURL == "" {
+		e.logger.Warnw("Cannot write skipped artifact to git: no git info", "error", err)
+		return
+	}
+
+	// Ensure bare repo
+	if _, err := e.repoManager.EnsureBareRepo(ctx, projectID, gitRepoURL, gitAccessToken); err != nil {
+		e.logger.Warnw("EnsureBareRepo failed for skipped artifact", "error", err)
+		return
+	}
+
+	// Ensure flow integration ref
+	integrationRef, integrationHeadSHA, err := e.repoManager.EnsureFlowIntegration(ctx, projectID, flowRun.ID, "main", "main")
+	if err != nil {
+		e.logger.Warnw("EnsureFlowIntegration failed for skipped artifact", "error", err)
+		return
+	}
+
+	// Create temp worktree
+	worktreePath, err := e.repoManager.EnsureNodeWorktree(ctx, projectID, flowRun.ID, nodeRun.ID, integrationHeadSHA)
+	if err != nil {
+		e.logger.Warnw("EnsureNodeWorktree failed for skipped artifact", "error", err)
+		return
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = e.repoManager.CleanupNodeWorktree(cleanupCtx, projectID, flowRun.ID, nodeRun.ID)
+	}()
+
+	// Write file and commit
+	commitSHA, err := writeArtifactToGit(ctx, worktreePath, filePath, content, artifactType)
+	if err != nil {
+		e.logger.Warnw("Failed to write skipped artifact to git", "error", err, "file_path", filePath)
+		return
+	}
+
+	// Integrate commit
+	newHeadSHA, err := e.repoManager.IntegrateNodeCommit(ctx, projectID, flowRun.ID, nodeRun.ID, commitSHA)
+	if err != nil {
+		e.logger.Warnw("Failed to integrate skipped artifact commit", "error", err)
+		return
+	}
+
+	// Update flow integration head
+	if err := e.db.UpdateFlowRunIntegration(ctx, flowRun.ID, integrationRef, newHeadSHA); err != nil {
+		e.logger.Warnw("Failed to update flow integration head", "error", err)
+	}
+
+	// Push
+	gitBranch := "main"
+	if taskURL, taskBranch, _ := e.db.GetTaskGitInfo(ctx, flowRun.TaskID); taskURL != "" && taskBranch != "" {
+		gitBranch = taskBranch
+	}
+	if err := e.repoManager.PushIntegration(ctx, projectID, flowRun.ID, gitRepoURL, gitAccessToken, gitBranch); err != nil {
+		e.logger.Warnw("Failed to push skipped artifact", "error", err)
+		return
+	}
+
+	e.logger.Infow("Wrote skipped artifact to git", "file_path", filePath, "commit", commitSHA, "node_id", nodeRun.NodeID)
 }
 
 // asyncCleanupFlowRepoState asynchronously cleans up git repo cache state for a completed/failed/cancelled flow.

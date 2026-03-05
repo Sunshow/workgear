@@ -43,7 +43,7 @@ log_file() { echo "$LOG_DIR/$1.log"; }
 is_running() {
   local pf
   pf="$(pid_file "$1")"
-  if [[ -f "$pf" ]]; then
+  if [ -f "$pf" ]; then
     local pid
     pid="$(cat "$pf")"
     if ps -p "$pid" > /dev/null 2>&1; then
@@ -64,12 +64,12 @@ check_port() {
 wait_for_port() {
   local port=$1 name=$2 timeout=$3
   local elapsed=0
-  while (( elapsed < timeout )); do
+  while [ "$elapsed" -lt "$timeout" ]; do
     if check_port "$port"; then
       return 0
     fi
     sleep 1
-    (( elapsed++ ))
+    elapsed=$((elapsed + 1))
   done
   return 1
 }
@@ -150,7 +150,7 @@ start_service() {
       ;;
     orchestrator)
       (cd "$ROOT_DIR/packages/orchestrator" && \
-        if [[ -f .env ]]; then set -a && source .env && set +a; fi && \
+        if [ -f .env ]; then set -a && source .env && set +a; fi && \
         nohup ./bin/orchestrator >> "$log" 2>&1 &
         echo $! > "$(pid_file orchestrator)")
       ;;
@@ -167,7 +167,7 @@ stop_service() {
   local pf
   pf="$(pid_file "$svc")"
 
-  if [[ ! -f "$pf" ]]; then
+  if [ ! -f "$pf" ]; then
     warn "$svc 未在运行（无 PID 文件）"
     return 0
   fi
@@ -193,14 +193,14 @@ stop_service() {
 
   # 等待 3 秒
   local waited=0
-  while (( waited < 3 )); do
+  while [ "$waited" -lt 3 ]; do
     if ! ps -p "$pid" > /dev/null 2>&1; then
       ok "$svc 已停止"
       rm -f "$pf"
       return 0
     fi
     sleep 1
-    (( waited++ ))
+    waited=$((waited + 1))
   done
 
   # 强制 kill（主进程 + 子进程树）
@@ -236,7 +236,7 @@ health_check() {
     local port
     port="$(get_port "$svc")"
     local timeout=20
-    [[ "$svc" == "orchestrator" ]] && timeout=15
+    [ "$svc" = "orchestrator" ] && timeout=15
 
     if wait_for_port "$port" "$svc" "$timeout"; then
       ok "$svc 正在监听 :$port"
@@ -305,7 +305,7 @@ cmd_status() {
     port="$(get_port "$svc")"
     pid="$(read_pid "$svc")"
 
-    if [[ -n "$pid" ]] && ps -p "$pid" > /dev/null 2>&1; then
+    if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
       if check_port "$port"; then
         status="${GREEN}RUNNING${NC}"
       else
@@ -324,10 +324,10 @@ cmd_status() {
 # ─── 命令: logs ─────────────────────────────────────────
 cmd_logs() {
   local svc="${1:-}"
-  if [[ -z "$svc" ]]; then
+  if [ -z "$svc" ]; then
     # tail 所有日志
     tail -f "$LOG_DIR"/*.log
-  elif [[ -f "$(log_file "$svc")" ]]; then
+  elif [ -f "$(log_file "$svc")" ]; then
     tail -f "$(log_file "$svc")"
   else
     fail "日志文件不存在: $(log_file "$svc")"

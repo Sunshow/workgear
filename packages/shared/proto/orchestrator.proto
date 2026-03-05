@@ -16,6 +16,7 @@ service OrchestratorService {
   rpc SubmitHumanInput(SubmitHumanInputRequest) returns (NodeActionResponse);
   rpc RetryNode(RetryNodeRequest) returns (NodeActionResponse);
   rpc RerunNode(RetryNodeRequest) returns (NodeActionResponse);
+  rpc SkipNode(SubmitHumanInputRequest) returns (NodeActionResponse);  // Reuse: node_run_id + data_json (previous output)
 
   // Agent 测试
   rpc TestAgent(TestAgentRequest) returns (TestAgentResponse);

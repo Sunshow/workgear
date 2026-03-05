@@ -53,3 +53,10 @@ tmp/
 temp/
 packages/orchestrator/server
 packages/orchestrator/bin/*
+
+# Local cache (git repo cache for agent worktrees)
+.cache/
+
+# Local docs
+README_lite.md
+docs/conversations/

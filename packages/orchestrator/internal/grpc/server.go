@@ -141,6 +141,17 @@ func (s *OrchestratorServer) RerunNode(ctx context.Context, req *pb.RetryNodeReq
 	return &pb.NodeActionResponse{Success: true}, nil
 }
 
+func (s *OrchestratorServer) SkipNode(ctx context.Context, req *pb.SubmitHumanInputRequest) (*pb.NodeActionResponse, error) {
+	s.logger.Infow("SkipNode called", "node_run_id", req.NodeRunId)
+
+	if err := s.executor.HandleSkipNode(ctx, req.NodeRunId, req.DataJson); err != nil {
+		s.logger.Errorw("SkipNode failed", "error", err)
+		return &pb.NodeActionResponse{Success: false, Error: err.Error()}, nil
+	}
+
+	return &pb.NodeActionResponse{Success: true}, nil
+}
+
 // ─── Event Stream ───
 
 func (s *OrchestratorServer) EventStream(req *pb.EventStreamRequest, stream pb.OrchestratorService_EventStreamServer) error {

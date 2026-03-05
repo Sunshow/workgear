@@ -9,6 +9,7 @@ import { useWebSocket } from '@/hooks/use-websocket'
 import { Button } from '@/components/ui/button'
 import { KanbanColumnComponent } from './kanban-column'
 import { CreateTaskDialog } from './create-task-dialog'
+import { CreateTaskFromArtifactDialog } from './create-task-from-artifact-dialog'
 import { TaskCard } from './task-card'
 import { TaskDetail } from './task-detail'
 
@@ -19,6 +20,7 @@ export function KanbanPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
+  const [createFromArtifactDialogOpen, setCreateFromArtifactDialogOpen] = useState(false)
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null)
   const [activeTask, setActiveTask] = useState<Task | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
@@ -192,12 +194,23 @@ export function KanbanPage() {
               <h1 className="text-2xl font-bold">{project?.name}</h1>
               <p className="text-sm text-muted-foreground">{project?.description || '项目看板'}</p>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => navigate(`/projects/${projectId}/workflows`)}
-            >
-              流程管理
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSelectedColumnId(columns[0]?.id || null)
+                  setCreateFromArtifactDialogOpen(true)
+                }}
+              >
+                从产物创建
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/projects/${projectId}/workflows`)}
+              >
+                流程管理
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -227,6 +240,16 @@ export function KanbanPage() {
         <CreateTaskDialog
           open={createTaskDialogOpen}
           onOpenChange={setCreateTaskDialogOpen}
+          projectId={projectId!}
+          columnId={selectedColumnId}
+          onSuccess={loadKanbanData}
+        />
+      )}
+
+      {selectedColumnId && (
+        <CreateTaskFromArtifactDialog
+          open={createFromArtifactDialogOpen}
+          onOpenChange={setCreateFromArtifactDialogOpen}
           projectId={projectId!}
           columnId={selectedColumnId}
           onSuccess={loadKanbanData}

@@ -1,9 +1,10 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { client } from '../db/index.js'
-import { workflowTemplates } from '../db/schema.js'
+import { workflowTemplates, workflows } from '../db/schema.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -319,6 +320,38 @@ const templates: TemplateDefinition[] = [
       },
     ],
   },
+  {
+    slug: 'simple-dev-from-artifact',
+    name: '从产物创建任务（标准流程）',
+    description: '从 User Story 产物生成任务清单后直接实施。适合技术方案相对明确的任务。',
+    category: 'development',
+    difficulty: 'beginner',
+    estimatedTime: '1-2 小时',
+    parameters: [
+      {
+        name: 'selected_stories',
+        type: 'text',
+        label: '选中的 User Stories',
+        required: true,
+      },
+    ],
+  },
+  {
+    slug: 'openspec-dev-from-artifact',
+    name: '从产物创建任务（完整流程）',
+    description: '从 User Story 产物生成完整 OpenSpec 后实施。适合需要架构设计或多模块协同的复杂任务。',
+    category: 'development',
+    difficulty: 'intermediate',
+    estimatedTime: '3-5 小时',
+    parameters: [
+      {
+        name: 'selected_stories',
+        type: 'text',
+        label: '选中的 User Stories',
+        required: true,
+      },
+    ],
+  },
 ]
 
 export async function runTemplatesSeed() {
@@ -356,6 +389,30 @@ export async function runTemplatesSeed() {
           isBuiltin: true,
         },
       })
+  }
+
+  // Cascade: sync updated templates to workflows.dsl
+  console.log('\n📋 Syncing DSL to workflows...')
+  for (const template of templates) {
+    const [tmplRow] = await db
+      .select({ id: workflowTemplates.id, template: workflowTemplates.template })
+      .from(workflowTemplates)
+      .where(eq(workflowTemplates.slug, template.slug))
+
+    if (tmplRow) {
+      const affected = await db
+        .select({ id: workflows.id })
+        .from(workflows)
+        .where(eq(workflows.templateId, tmplRow.id))
+
+      if (affected.length > 0) {
+        await db
+          .update(workflows)
+          .set({ dsl: tmplRow.template, updatedAt: new Date() })
+          .where(eq(workflows.templateId, tmplRow.id))
+        console.log(`  → Synced DSL to ${affected.length} workflow(s) for template: ${template.slug}`)
+      }
+    }
   }
 
   console.log('✅ Templates seeded successfully!')

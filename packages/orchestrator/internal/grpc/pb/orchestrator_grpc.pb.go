@@ -27,6 +27,7 @@ const (
 	OrchestratorService_SubmitHumanInput_FullMethodName  = "/orchestrator.OrchestratorService/SubmitHumanInput"
 	OrchestratorService_RetryNode_FullMethodName         = "/orchestrator.OrchestratorService/RetryNode"
 	OrchestratorService_RerunNode_FullMethodName         = "/orchestrator.OrchestratorService/RerunNode"
+	OrchestratorService_SkipNode_FullMethodName          = "/orchestrator.OrchestratorService/SkipNode"
 	OrchestratorService_TestAgent_FullMethodName         = "/orchestrator.OrchestratorService/TestAgent"
 	OrchestratorService_ReloadAgentConfig_FullMethodName = "/orchestrator.OrchestratorService/ReloadAgentConfig"
 	OrchestratorService_EventStream_FullMethodName       = "/orchestrator.OrchestratorService/EventStream"
@@ -195,6 +196,7 @@ type OrchestratorServiceServer interface {
 	SubmitHumanInput(context.Context, *SubmitHumanInputRequest) (*NodeActionResponse, error)
 	RetryNode(context.Context, *RetryNodeRequest) (*NodeActionResponse, error)
 	RerunNode(context.Context, *RetryNodeRequest) (*NodeActionResponse, error)
+	SkipNode(context.Context, *SubmitHumanInputRequest) (*NodeActionResponse, error)
 	// Agent 测试
 	TestAgent(context.Context, *TestAgentRequest) (*TestAgentResponse, error)
 	// Agent 配置热重载
@@ -234,6 +236,9 @@ func (UnimplementedOrchestratorServiceServer) RetryNode(context.Context, *RetryN
 }
 func (UnimplementedOrchestratorServiceServer) RerunNode(context.Context, *RetryNodeRequest) (*NodeActionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RerunNode not implemented")
+}
+func (UnimplementedOrchestratorServiceServer) SkipNode(context.Context, *SubmitHumanInputRequest) (*NodeActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SkipNode not implemented")
 }
 func (UnimplementedOrchestratorServiceServer) TestAgent(context.Context, *TestAgentRequest) (*TestAgentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestAgent not implemented")
@@ -409,6 +414,24 @@ func _OrchestratorService_RerunNode_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrchestratorService_SkipNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitHumanInputRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrchestratorServiceServer).SkipNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrchestratorService_SkipNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrchestratorServiceServer).SkipNode(ctx, req.(*SubmitHumanInputRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _OrchestratorService_TestAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TestAgentRequest)
 	if err := dec(in); err != nil {
@@ -494,6 +517,10 @@ var OrchestratorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RerunNode",
 			Handler:    _OrchestratorService_RerunNode_Handler,
+		},
+		{
+			MethodName: "SkipNode",
+			Handler:    _OrchestratorService_SkipNode_Handler,
 		},
 		{
 			MethodName: "TestAgent",

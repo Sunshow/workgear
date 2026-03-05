@@ -1,0 +1,173 @@
+name: "simple-dev-from-artifact"
+version: "1.0"
+description: "从 User Story 生成任务清单后实施（标准流程）"
+
+variables:
+  project_id: ""
+  selected_stories: ""
+
+nodes:
+  - id: load_artifact
+    name: "加载产物"
+    type: system_init
+    config:
+      output_from_variables:
+        - key: user_stories
+          variable: selected_stories
+
+  - id: generate_change_name
+    name: "生成变更名称"
+    type: agent_task
+    agent:
+      role: "spec-architect"
+    config:
+      mode: generate_change_name
+      prompt_template: |
+        根据以下 User Stories 生成变更名称（slug 格式）：
+        {{nodes.load_artifact.outputs.user_stories}}
+        
+        要求：
+        - 只输出变更名称
+        - 全小写，单词用连字符分隔
+        - 简洁准确，不超过5个单词
+      timeout: 5m
+
+  - id: generate_tasks
+    name: "生成任务清单"
+    type: agent_task
+    agent:
+      role: "spec-architect"
+    config:
+      mode: spec
+      timeout: 15m
+      artifact:
+        type: tasks
+        title: "任务清单 - {{nodes.generate_change_name.outputs.change_name}}"
+        file_path: "docs/tasks/{{nodes.generate_change_name.outputs.change_name}}.md"
+      prompt_template: |
+        {% if review.comment %}
+        ## ⚠️ 审核打回意见
+        上一版本的任务清单被打回，原因如下：
+
+        {{review.comment}}
+
+        请根据以上意见重新生成任务清单。
+
+        ---
+        {% endif %}
+
+        基于以下 User Stories，生成详细的任务清单（tasks.md）：
+        
+        {{nodes.load_artifact.outputs.user_stories}}
+        
+        变更名称：{{nodes.generate_change_name.outputs.change_name}}
+        
+        输出格式：
+        # 任务清单：{{nodes.generate_change_name.outputs.change_name}}
+        
+        ## 前置准备
+        - [ ] 任务1
+        - [ ] 任务2
+        
+        ## 核心实施
+        ### 模块A
+        - [ ] 任务3
+        - [ ] 任务4
+        
+        ### 模块B
+        - [ ] 任务5
+        
+        ## 测试验证
+        - [ ] 任务6
+        
+        要求：
+        - 将 User Story 的"技术实现要点"展开为具体任务
+        - 按模块分组，按依赖顺序排列
+        - 每个任务要具体可执行（不超过 2 小时）
+        - 使用 [ ] 复选框格式
+
+  - id: review_tasks
+    name: "审核任务清单"
+    type: human_review
+    config:
+      timeout: 24h
+      review_target: "{{nodes.generate_tasks.outputs.result}}"
+      show_artifacts: true
+      actions: ["approve", "reject"]
+      artifact_scope: predecessor
+    on_reject:
+      goto: generate_tasks
+      max_loops: 3
+      inject:
+        feedback: "{{review.comment}}"
+
+  - id: implement_code
+    name: "实施代码"
+    type: agent_task
+    agent:
+      role: "general-developer"
+    config:
+      mode: execute
+      timeout: 60m
+      git:
+        create_branch: true
+        branch_pattern: "feat/{{nodes.generate_change_name.outputs.change_name}}"
+      prompt_template: |
+        请按照任务清单实施以下 User Stories：
+        
+        ## User Stories
+        {{nodes.load_artifact.outputs.user_stories}}
+        
+        ## 任务清单
+        {{nodes.generate_tasks.outputs.result}}
+        
+        变更名称：{{nodes.generate_change_name.outputs.change_name}}
+        
+        实施要求：
+        1. 严格按照任务清单顺序实施
+        2. 每完成一项在清单中标记 [x]
+        3. 确保满足 User Story 的验收标准
+        4. 完成后执行 git add -A
+
+  - id: code_review
+    name: "Agent 代码审核"
+    type: agent_task
+    agent:
+      role: "code-reviewer"
+    config:
+      mode: code_review
+      transient: true
+      prompt_template: |
+        请 Review 代码变更，对照 User Stories 的验收标准：
+        {{nodes.load_artifact.outputs.user_stories}}
+        
+        检查：
+        1. 任务清单是否全部完成
+        2. 验收标准是否满足
+        3. 代码质量
+      timeout: 10m
+
+  - id: final_review
+    name: "最终审核"
+    type: human_review
+    config:
+      timeout: 24h
+      actions: ["approve", "reject"]
+      artifact_scope: predecessor
+    on_reject:
+      goto: implement_code
+      max_loops: 3
+
+edges:
+  - from: load_artifact
+    to: generate_change_name
+  - from: generate_change_name
+    to: generate_tasks
+  - from: generate_tasks
+    to: review_tasks
+  - from: review_tasks
+    to: implement_code
+  - from: implement_code
+    to: code_review
+  - from: code_review
+    to: final_review

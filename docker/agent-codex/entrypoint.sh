@@ -151,6 +151,16 @@ fi
 # ─── Step 2: Run Codex CLI ───
 echo "[agent] Running Codex CLI..."
 
+# Load prompt from file (preferred) or env var (fallback)
+if [ -f /tmp/agent_prompt.txt ]; then
+    AGENT_PROMPT=$(cat /tmp/agent_prompt.txt)
+    echo "[agent] Loaded prompt from file (/tmp/agent_prompt.txt, $(wc -c < /tmp/agent_prompt.txt) bytes)"
+elif [ -n "$AGENT_PROMPT" ]; then
+    echo "[agent] Using prompt from environment variable"
+else
+    echo "[agent] Warning: No prompt found (neither file nor env var)"
+fi
+
 # Build codex command
 CODEX_CMD="codex exec"
 CODEX_ARGS="--ephemeral"

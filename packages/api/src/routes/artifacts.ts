@@ -7,21 +7,67 @@ import { authenticate } from '../middleware/auth.js'
 export async function artifactRoutes(app: FastifyInstance) {
   // 所有产物路由都需要登录
   app.addHook('preHandler', authenticate)
-  // 查询产物（支持 taskId / flowRunId / nodeRunId）
-  app.get<{ Querystring: { taskId?: string; flowRunId?: string; nodeRunId?: string } }>('/', async (request, reply) => {
-    const { taskId, flowRunId, nodeRunId } = request.query
+  
+  // 查询产物（支持 taskId / flowRunId / nodeRunId / projectId）
+  app.get<{ Querystring: { taskId?: string; flowRunId?: string; nodeRunId?: string; projectId?: string; type?: string } }>('/', async (request, reply) => {
+    const { taskId, flowRunId, nodeRunId, projectId, type } = request.query
 
-    if (!taskId && !flowRunId && !nodeRunId) {
-      return reply.status(422).send({ error: 'taskId, flowRunId, or nodeRunId is required' })
+    if (!taskId && !flowRunId && !nodeRunId && !projectId) {
+      return reply.status(422).send({ error: 'taskId, flowRunId, nodeRunId, or projectId is required' })
     }
 
+    if (projectId) {
+      // Query by projectId: join with tasks table
+      const { tasks } = await import('../db/schema.js')
+      const result = await db
+        .select({
+          id: artifacts.id,
+          taskId: artifacts.taskId,
+          type: artifacts.type,
+          title: artifacts.title,
+          filePath: artifacts.filePath,
+          flowRunId: artifacts.flowRunId,
+          nodeRunId: artifacts.nodeRunId,
+          createdAt: artifacts.createdAt,
+        })
+        .from(artifacts)
+        .innerJoin(tasks, eq(artifacts.taskId, tasks.id))
+        .where(eq(tasks.projectId, projectId))
+        .orderBy(desc(artifacts.createdAt))
+      
+      // Filter by type if specified
+      if (type) {
+        return result.filter(a => a.type === type)
+      }
+      return result
+    }
+
+    // Query by taskId / flowRunId / nodeRunId
     if (nodeRunId) {
-      return await db.select().from(artifacts).where(eq(artifacts.nodeRunId, nodeRunId)).orderBy(artifacts.createdAt)
+      const result = await db.select().from(artifacts).where(eq(artifacts.nodeRunId, nodeRunId)).orderBy(desc(artifacts.createdAt))
+      if (type) {
+        return result.filter(a => a.type === type)
+      }
+      return result
     }
+    
     if (flowRunId) {
-      return await db.select().from(artifacts).where(eq(artifacts.flowRunId, flowRunId)).orderBy(artifacts.createdAt)
+      const result = await db.select().from(artifacts).where(eq(artifacts.flowRunId, flowRunId)).orderBy(desc(artifacts.createdAt))
+      if (type) {
+        return result.filter(a => a.type === type)
+      }
+      return result
     }
-    return await db.select().from(artifacts).where(eq(artifacts.taskId, taskId!)).orderBy(artifacts.createdAt)
+    
+    if (taskId) {
+      const result = await db.select().from(artifacts).where(eq(artifacts.taskId, taskId)).orderBy(desc(artifacts.createdAt))
+      if (type) {
+        return result.filter(a => a.type === type)
+      }
+      return result
+    }
+
+    return []
   })
 
   // 获取单个产物
@@ -85,6 +131,24 @@ export async function artifactRoutes(app: FastifyInstance) {
       return { content: version.content || '' }
     }
   )
+
+  // 获取产物最新版本内容
+  app.get<{ Params: { id: string } }>('/:id/latest-content', async (request, reply) => {
+    const { id } = request.params
+
+    const [version] = await db
+      .select({ content: artifactVersions.content })
+      .from(artifactVersions)
+      .where(eq(artifactVersions.artifactId, id))
+      .orderBy(desc(artifactVersions.version))
+      .limit(1)
+
+    if (!version) {
+      return reply.status(404).send({ error: 'No versions found' })
+    }
+
+    return { content: version.content || '' }
+  })
 
   // 创建产物新版本
   app.post<{

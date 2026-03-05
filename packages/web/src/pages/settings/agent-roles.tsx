@@ -681,7 +681,8 @@ function TestAgentDialog({
 
     try {
       const response = await api.post(`agent-roles/${role.id}/test`, {
-        json: { prompt }
+        json: { prompt },
+        timeout: 150000,
       }).json<{ success: boolean; result?: string; error?: string; logs?: string[] }>()
 
       if (response.success) {

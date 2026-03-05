@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -104,6 +107,10 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 	if timeout == 0 {
 		timeout = 10 * time.Minute
 	}
+	e.logger.Infow("DEBUG: container timeout",
+		"req.Timeout", req.Timeout.String(),
+		"effective_timeout", timeout.String(),
+	)
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -132,9 +139,28 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 
 	// Build volume mounts
 	var binds []string
+
+	// Mount prompt file (avoids ARG_MAX limit for large prompts)
+	if req.PromptFilePath != "" {
+		binds = append(binds, req.PromptFilePath+":/tmp/agent_prompt.txt:ro")
+		e.logger.Debugw("Mounting prompt file", "host_path", req.PromptFilePath)
+	}
+
 	if req.WorktreePath != "" {
 		binds = append(binds, req.WorktreePath+":/workspace:rw")
 		e.logger.Debugw("Mounting worktree volume", "host_path", req.WorktreePath)
+
+		// Mount bare repo so git worktree cross-references resolve inside the container.
+		// Worktree's .git file contains an absolute host path to bare.git/worktrees/node-xxx;
+		// we mount bare repo at /repo.git and rewrite the .git file to use the container path.
+		if req.BareRepoPath != "" {
+			binds = append(binds, req.BareRepoPath+":/repo.git:rw")
+			e.logger.Debugw("Mounting bare repo volume", "host_path", req.BareRepoPath)
+
+			if err := e.rewriteWorktreeGitPaths(req.WorktreePath, req.BareRepoPath, "/repo.git"); err != nil {
+				e.logger.Warnw("Failed to rewrite worktree git paths", "error", err)
+			}
+		}
 	}
 	if req.DepsPath != "" {
 		binds = append(binds, req.DepsPath+":/deps:rw")
@@ -154,6 +180,20 @@ func (e *DockerExecutor) Execute(ctx context.Context, req *ExecutorRequest) (*Ex
 
 	// Ensure cleanup
 	defer func() {
+		// Clean up prompt temp file
+		if req.PromptFilePath != "" {
+			if err := os.Remove(req.PromptFilePath); err != nil {
+				e.logger.Debugw("Failed to remove prompt temp file", "path", req.PromptFilePath, "error", err)
+			}
+		}
+
+		// Restore worktree .git paths back to host paths (so host-side git operations still work)
+		if req.WorktreePath != "" && req.BareRepoPath != "" {
+			if err := e.rewriteWorktreeGitPaths(req.WorktreePath, "/repo.git", req.BareRepoPath); err != nil {
+				e.logger.Warnw("Failed to restore worktree git paths", "error", err)
+			}
+		}
+
 		removeCtx, removeCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer removeCancel()
 		if err := e.cli.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); err != nil {
@@ -402,4 +442,59 @@ func (e *DockerExecutor) extractGitMetadata(ctx context.Context, containerID str
 // Close releases the Docker client resources
 func (e *DockerExecutor) Close() error {
 	return e.cli.Close()
+}
+
+// rewriteWorktreeGitPaths rewrites the cross-reference paths between a worktree and its bare repo.
+// Git worktree creates two cross-references using absolute paths:
+//   1. worktree/.git file → "gitdir: <bare>/worktrees/<name>"
+//   2. <bare>/worktrees/<name>/gitdir → "<worktree>/.git"
+// When running inside Docker, these host paths don't exist. This function replaces
+// oldBarePrefix with newBarePrefix in the worktree's .git file, and updates the
+// bare repo's worktree gitdir entry to point to /workspace/.git (the container mount point).
+func (e *DockerExecutor) rewriteWorktreeGitPaths(worktreePath, oldBarePrefix, newBarePrefix string) error {
+	// 1. Rewrite worktree/.git file: "gitdir: <host-bare>/worktrees/..." → "gitdir: <container-bare>/worktrees/..."
+	dotGitPath := filepath.Join(worktreePath, ".git")
+	content, err := os.ReadFile(dotGitPath)
+	if err != nil {
+		return fmt.Errorf("read worktree .git file: %w", err)
+	}
+
+	original := string(content)
+	rewritten := strings.Replace(original, oldBarePrefix, newBarePrefix, 1)
+	if rewritten != original {
+		if err := os.WriteFile(dotGitPath, []byte(rewritten), 0644); err != nil {
+			return fmt.Errorf("write worktree .git file: %w", err)
+		}
+		e.logger.Debugw("Rewrote worktree .git file", "old_prefix", oldBarePrefix, "new_prefix", newBarePrefix)
+	}
+
+	// 2. Rewrite bare/worktrees/<name>/gitdir: "<host-worktree>/.git" → "/workspace/.git"
+	// Extract worktree name from the gitdir path in .git file (e.g., "gitdir: .../worktrees/node-xxx")
+	gitdirLine := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(content)), "gitdir:"))
+	worktreeName := filepath.Base(gitdirLine)
+	bareWorktreeGitdir := filepath.Join(oldBarePrefix, "worktrees", worktreeName, "gitdir")
+
+	gitdirContent, err := os.ReadFile(bareWorktreeGitdir)
+	if err != nil {
+		return fmt.Errorf("read bare worktree gitdir: %w", err)
+	}
+
+	oldWorktreeRef := strings.TrimSpace(string(gitdirContent))
+	var newWorktreeRef string
+	if newBarePrefix == "/repo.git" {
+		// Going host→container: point to /workspace/.git
+		newWorktreeRef = "/workspace/.git"
+	} else {
+		// Going container→host: restore original worktree path
+		newWorktreeRef = filepath.Join(worktreePath, ".git")
+	}
+
+	if oldWorktreeRef != newWorktreeRef {
+		if err := os.WriteFile(bareWorktreeGitdir, []byte(newWorktreeRef+"\n"), 0644); err != nil {
+			return fmt.Errorf("write bare worktree gitdir: %w", err)
+		}
+		e.logger.Debugw("Rewrote bare worktree gitdir", "old", oldWorktreeRef, "new", newWorktreeRef)
+	}
+
+	return nil
 }

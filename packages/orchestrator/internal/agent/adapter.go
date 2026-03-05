@@ -64,6 +64,7 @@ type AgentRequest struct {
 	Skills          []*db.Skill    `json:"skills,omitempty"` // Associated skills for this role
 	// Git repo cache: pre-created worktree paths
 	WorktreePath    string         `json:"worktree_path,omitempty"`
+	BareRepoPath    string         `json:"bare_repo_path,omitempty"`
 	DepsPath        string         `json:"deps_path,omitempty"`
 }
 
@@ -153,7 +154,10 @@ type ExecutorRequest struct {
 	OnLogEvent     LogEventCallback  // Per-execution log event callback (thread-safe)
 	// Git repo cache: volume mounts
 	WorktreePath   string            // Host path to node worktree (mounted as /workspace:rw)
+	BareRepoPath   string            // Host path to bare repo (mounted as /repo.git:ro for worktree gitdir resolution)
 	DepsPath       string            // Host path to dependency cache (mounted as /deps:rw)
+	// Prompt file: avoids ARG_MAX limit when passing large prompts via env vars
+	PromptFilePath string            // Host path to temp file containing AGENT_PROMPT (mounted as /tmp/agent_prompt.txt:ro)
 }
 
 // ExecutorResponse is the runtime-layer response

@@ -278,7 +278,12 @@ function NodeRunItem({ nodeRun, flowStatus, onActionComplete, onViewLogs, artifa
   const [nodeArtifacts, setNodeArtifacts] = useState<Artifact[]>([])
   const [editingTransient, setEditingTransient] = useState(false)
   const [transientContent, setTransientContent] = useState('')
+  const [previousOutput, setPreviousOutput] = useState<{ hasPrevious: boolean; output?: any } | null>(null)
+  const [skipping, setSkipping] = useState(false)
+  const [proceeding, setProceeding] = useState(false)
   const isFlowTerminal = flowStatus === 'cancelled' || flowStatus === 'completed'
+  const canSkip = !isFlowTerminal && ['queued', 'waiting_human'].includes(nodeRun.status)
+  const isReusePaused = nodeRun.status === 'waiting_human' && nodeRun.nodeType === 'agent_task'
 
   // Auto-expand when waiting for human
   useEffect(() => {
@@ -289,6 +294,17 @@ function NodeRunItem({ nodeRun, flowStatus, onActionComplete, onViewLogs, artifa
       setExpanded(true)
     }
   }, [nodeRun.status, flowStatus])
+
+  // Check for previous flow output (for artifact reuse)
+  useEffect(() => {
+    if (!canSkip) {
+      setPreviousOutput(null)
+      return
+    }
+    api.get(`node-runs/${nodeRun.id}/previous-output`).json<{ hasPrevious: boolean; output?: any }>()
+      .then(setPreviousOutput)
+      .catch(() => setPreviousOutput(null))
+  }, [nodeRun.id, nodeRun.status, canSkip])
 
   // Auto-fill feedback for rejected nodes (pre-fill with last review comment)
   useEffect(() => {
@@ -439,8 +455,37 @@ function NodeRunItem({ nodeRun, flowStatus, onActionComplete, onViewLogs, artifa
     }
   }
 
+  async function handleSkipWithPrevious() {
+    if (!previousOutput?.output) return
+    if (!confirm('确定要复用上次流程的产物跳过此节点吗？')) return
+    setSkipping(true)
+    try {
+      await api.post(`node-runs/${nodeRun.id}/skip`, {
+        json: { outputJson: typeof previousOutput.output === 'string' ? previousOutput.output : JSON.stringify(previousOutput.output) },
+      })
+      onActionComplete()
+    } catch (error: any) {
+      alert(`跳过失败: ${error.message}`)
+    } finally {
+      setSkipping(false)
+    }
+  }
+
+  async function handleProceed() {
+    if (!confirm('确定要重新执行此节点吗？')) return
+    setProceeding(true)
+    try {
+      await api.post(`node-runs/${nodeRun.id}/proceed`)
+      onActionComplete()
+    } catch (error: any) {
+      alert(`继续执行失败: ${error.message}`)
+    } finally {
+      setProceeding(false)
+    }
+  }
+
   const displayName = nodeRun.nodeName || nodeRun.nodeId
-  const isClickable = nodeRun.status === 'waiting_human' || nodeRun.status === 'completed' || nodeRun.status === 'failed' || nodeRun.status === 'rejected'
+  const isClickable = nodeRun.status === 'waiting_human' || nodeRun.status === 'completed' || nodeRun.status === 'failed' || nodeRun.status === 'rejected' || (previousOutput?.hasPrevious && canSkip)
 
   return (
     <div className="rounded-md border">
@@ -464,6 +509,36 @@ function NodeRunItem({ nodeRun, flowStatus, onActionComplete, onViewLogs, artifa
         <Badge variant={statusColors[nodeRun.status] || 'outline'} className="text-sm md:text-xs shrink-0">
           {statusLabels[nodeRun.status] || nodeRun.status}
         </Badge>
+        {previousOutput?.hasPrevious && canSkip && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 md:h-6 text-xs shrink-0 border-blue-500 text-blue-600 hover:bg-blue-50"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleSkipWithPrevious()
+            }}
+            disabled={skipping}
+          >
+            {skipping ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <CheckCircle className="mr-1 h-3 w-3" />}
+            复用历史产物
+          </Button>
+        )}
+        {isReusePaused && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 md:h-6 text-xs shrink-0 border-green-500 text-green-600 hover:bg-green-50"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleProceed()
+            }}
+            disabled={proceeding}
+          >
+            {proceeding ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3" />}
+            继续执行
+          </Button>
+        )}
         {nodeRun.nodeType === 'agent_task' && (
           <Button
             size="sm"
@@ -565,8 +640,8 @@ function NodeRunItem({ nodeRun, flowStatus, onActionComplete, onViewLogs, artifa
             </div>
           )}
 
-          {/* Show input for waiting_human nodes — 仅在无产物时显示 */}
-          {nodeRun.status === 'waiting_human' && nodeRun.input && nodeArtifacts.length === 0 && (
+          {/* Show input for waiting_human nodes — 仅在无产物时显示，排除 human_input（其 input 是 form 定义） */}
+          {nodeRun.status === 'waiting_human' && nodeRun.nodeType !== 'human_input' && nodeRun.input && nodeArtifacts.length === 0 && (
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">待审核内容</p>
               <CodeBlock

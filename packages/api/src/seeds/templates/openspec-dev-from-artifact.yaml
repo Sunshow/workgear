@@ -1,97 +1,22 @@
-name: "openspec-dev-pipeline-v2"
-version: "2.0"
-description: "优化版 Spec 驱动开发流水线：增加需求理解与确认环节，避免理解偏差导致的推翻重来"
+name: "openspec-dev-from-artifact"
+version: "1.0"
+description: "从 User Story 产物生成完整 OpenSpec 后实施（完整流程）"
 
 variables:
   project_id: ""
-  requirement_text: ""
+  selected_stories: ""
 
 nodes:
-  # ─── 阶段 1：提交需求 ───
-  - id: submit_requirement
-    name: "提交需求"
-    type: human_input
+  # ─── 阶段 1：加载产物 ───
+  - id: load_artifact
+    name: "加载产物"
+    type: system_init
     config:
-      form:
-        - field: requirement_text
-          type: textarea
-          label: "需求描述"
-          required: true
-        - field: priority
-          type: select
-          label: "优先级"
-          options: ["P0", "P1", "P2", "P3"]
-          required: false
+      output_from_variables:
+        - key: user_stories
+          variable: selected_stories
 
-  # ─── 阶段 2：需求理解（新增）───
-  - id: understand_requirement
-    name: "理解需求"
-    type: agent_task
-    agent:
-      role: "requirement-analyst"
-    config:
-      mode: understand
-      transient: true
-      prompt_template: |
-        {% if review.comment %}
-        ## ⚠️ 审核打回意见
-        上一版本的需求理解被打回，原因如下：
-        
-        {{review.comment}}
-        
-        请根据以上意见重新理解需求，确保解决所有提出的问题。
-        
-        ---
-        {% endif %}
-        
-        请快速理解以下需求，输出 Markdown 格式的理解文档（200-500 字）：
-        
-        需求：{{nodes.submit_requirement.outputs.requirement_text}}
-        优先级：{{nodes.submit_requirement.outputs.priority}}
-        
-        输出格式：
-        # 需求理解
-        
-        ## 核心目标
-        （一句话概括）
-        
-        ## 关键点
-        - 点1
-        - 点2
-        - 点3
-        
-        ## 影响范围
-        - 涉及的文件/模块
-        
-        ## 技术方案（初步）
-        （简要说明）
-        
-        ## 风险点
-        （如果有）
-        
-        ⚠️ 重要：
-        - 不要生成完整的 Spec，只需要理解摘要
-        - 不要深入分析代码，只需要列出关键文件
-        - 如果不确定，标注"待确认"并继续
-
-  # ─── 阶段 3：需求确认（新增）───
-  - id: confirm_understanding
-    name: "确认需求理解"
-    type: human_review
-    config:
-      timeout: 24h
-      editable: true
-      editable_fields:
-        - understanding_md
-      actions: ["approve", "reject"]
-      artifact_scope: predecessor
-    on_reject:
-      goto: understand_requirement
-      max_loops: 3
-      inject:
-        feedback: "{{review.comment}}"
-
-  # ─── 阶段 4：自动生成变更名称 ───
+  # ─── 阶段 2：自动生成变更名称 ───
   - id: generate_change_name
     name: "生成变更名称"
     type: agent_task
@@ -100,10 +25,10 @@ nodes:
     config:
       mode: generate_change_name
       prompt_template: |
-        根据以下需求理解，生成一个简短的英文变更名称（slug 格式，用连字符分隔）。
+        根据以下 User Stories，生成一个简短的英文变更名称（slug 格式，用连字符分隔）。
 
-        需求理解：
-        {{nodes.confirm_understanding.outputs.confirmed_understanding}}
+        User Stories：
+        {{nodes.load_artifact.outputs.user_stories}}
 
         要求：
         - 只输出变更名称，不要其他内容
@@ -112,12 +37,12 @@ nodes:
         - 不要包含 feat/fix 等前缀
       timeout: 5m
 
-  # ─── 阶段 5：Agent 生成 Spec ───
+  # ─── 阶段 3：Agent 生成 Spec ───
   - id: generate_spec
     name: "生成 OpenSpec"
     type: agent_task
     agent:
-      role: "{{params.spec_role}}"
+      role: "spec-architect"
     config:
       mode: opsx_plan
       timeout: 30m
@@ -126,7 +51,7 @@ nodes:
         branch_pattern: "feat/{{nodes.generate_change_name.outputs.change_name}}"
       opsx:
         change_name: "{{nodes.generate_change_name.outputs.change_name}}"
-        schema: "{{params.spec_schema}}"
+        schema: "v1"
         init_if_missing: true
       prompt_template: |
         {% if review.comment %}
@@ -140,10 +65,10 @@ nodes:
         ---
         {% endif %}
 
-        基于以下需求理解，使用 OpenSpec 工作流生成完整的规划文档：
+        基于以下 User Stories，使用 OpenSpec 工作流生成完整的规划文档：
 
-        ## 需求理解（已确认）
-        {{nodes.confirm_understanding.outputs.confirmed_understanding}}
+        ## User Stories
+        {{nodes.load_artifact.outputs.user_stories}}
 
         ## Change Name（变更标识符）
         本次变更的唯一标识符为：{{nodes.generate_change_name.outputs.change_name}}
@@ -165,8 +90,7 @@ nodes:
         5. 生成 tasks.md（按模块分组的实施任务清单，使用 [ ] 复选框格式）
 
         ⚠️ 重要：
-        - 请直接生成 OpenSpec 产物，不要重新分析需求
-        - 需求理解已经过人工确认，请严格按照理解的内容生成 Spec
+        - User Stories 已包含验收标准和技术实现要点，请直接基于这些内容生成 Spec
         - 在所有 spec 文件的 `> **Change:**` 字段中，必须使用变更标识符的原始值：{{nodes.generate_change_name.outputs.change_name}}
         - 不要修改或添加任何前缀，直接使用这个值
 
@@ -175,7 +99,7 @@ nodes:
         max_attempts: 2
         backoff: exponential
 
-  # ─── 阶段 6：人工 Review Spec ───
+  # ─── 阶段 4：人工 Review Spec ───
   - id: review_spec
     name: "审核 Spec"
     type: human_review
@@ -192,16 +116,16 @@ nodes:
       artifact_scope: predecessor
     on_reject:
       goto: generate_spec
-      max_loops: "{{params.max_spec_review_loops}}"
+      max_loops: 3
       inject:
         feedback: "{{review.comment}}"
 
-  # ─── 阶段 7：Agent 实施代码 ───
+  # ─── 阶段 5：Agent 实施代码 ───
   - id: implement_code
     name: "实施代码"
     type: agent_task
     agent:
-      role: "{{params.developer_role}}"
+      role: "general-developer"
     config:
       mode: opsx_apply
       timeout: 60m
@@ -248,7 +172,7 @@ nodes:
         branch_pattern: "feat/{{nodes.generate_change_name.outputs.change_name}}"
         auto_commit: true
 
-  # ─── 阶段 8：Agent 代码审核 ───
+  # ─── 阶段 6：Agent 代码审核 ───
   - id: code_review
     name: "Agent 代码审核"
     type: agent_task
@@ -268,9 +192,9 @@ nodes:
         2. 正确性：实施是否符合 specs 中的需求和场景
         3. 一致性：代码是否符合 design.md 中的技术方案
         4. 代码质量：可维护性、安全性、性能
-    timeout: 10m
+      timeout: 10m
 
-  # ─── 阶段 9：最终审核 ───
+  # ─── 阶段 7：最终审核 ───
   - id: final_review
     name: "最终审核"
     type: human_review
@@ -282,16 +206,16 @@ nodes:
       artifact_scope: predecessor
     on_reject:
       goto: implement_code
-      max_loops: "{{params.max_code_review_loops}}"
+      max_loops: 3
       inject:
         feedback: "{{review.comment}}"
 
-  # ─── 阶段 10：归档 Spec ───
+  # ─── 阶段 8：归档 Spec ───
   - id: archive_spec
     name: "归档 Spec"
     type: agent_task
     agent:
-      role: "{{params.spec_role}}"
+      role: "spec-architect"
     config:
       mode: opsx_plan
       timeout: 10m
@@ -314,11 +238,7 @@ nodes:
         4. 确保 openspec/specs/ 中的内容是最新的完整规范
 
 edges:
-  - from: submit_requirement
-    to: understand_requirement
-  - from: understand_requirement
-    to: confirm_understanding
-  - from: confirm_understanding
+  - from: load_artifact
     to: generate_change_name
   - from: generate_change_name
     to: generate_spec
